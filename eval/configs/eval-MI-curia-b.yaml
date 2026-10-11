@@ -1,0 +1,96 @@
+# Standalone KneeNo classification evaluation of an official Curia checkpoint -- config for
+# eval/eval_curia_kneeno.py (--config). Submit from the repo root with
+#     sbatch eval/submit_eval_curia_kneeno.sh
+# Exactly two top-level keys: model_name and eval. Env vars ($VAR, ${VAR}, leading ~) are expanded everywhere; an
+# unset one is an error.
+#
+# Outputs, all inside a dedicated folder: TensorBoard head curves (eval.logging.tensorboard_dir), per-label
+# CSVs (eval.logging.per_label_dir), and in the parent of per_label_dir the final metrics (results.json) and this
+# config with env vars expanded (params.yaml). The script refuses to start if any of them already exist.
+
+model_name: raidium/curia
+
+# KneeNo classification evaluation -- see KneeNo/kneeno/evaluation/config.py for every key and its default.
+eval:
+  seed: 239
+  amp_dtype: bfloat16  # frozen-encoder forward under autocast (CUDA only); null -> float32. Heads still train in float32.
+  cache_features: true  # linear / linear_pool / linear_slice_cls / attentive_slice_cls train on features extracted
+                        # once instead of re-encoding every head epoch; k-NN always uses the shared pass.
+                        # attentive_pool / attentive_slice_pool never cache.
+  split:
+    test_fraction: 0.1
+  data:
+    data_root: $TMP/kneeno_data/internal
+    label_meta: /hpcwork/p0021834/workspace_roman/jonas/BigKneeTar/metadata_labeled.json
+    dataset_type: internal
+    series_depth: 24  # slices per volume the encoder sees one by one; also the slice count of the slice tasks
+    resample_mode: nearest
+    num_workers: 31
+    subset: 1.0  # seeded subsample of the labeled EXAMS: float in (0, 1] = fraction, int > 1 = count, 1.0 = all
+    multiprocessing_context: fork  # eval DataLoader worker start method; null -> inherit. Workers must never touch CUDA
+    persistent_workers: true  # keep workers alive across head epochs (ignored when num_workers = 0)
+  logging:
+    tensorboard_dir: /hpcwork/va105917/curia/curia-b/eval/internal/tb
+    per_label_dir: /hpcwork/va105917/curia/curia-b/eval/internal/eval_per_label
+    tag_prefix: eval
+  freq:
+    knn: 1
+    linear: 1
+    linear_pool: 1
+    attentive_pool: 1
+    linear_slice_cls: 1
+    attentive_slice_cls: 1
+    attentive_slice_pool: 1
+  knn:
+    k: [5, 20, 50, 100]
+    metric: cosine
+    temperature: 0.07
+    pooling: avg  # how the per-slice cls tokens are pooled into one per volume (avg | max)
+    center: true  # subtract each sequence's mean feature before the per-sequence L2 normalisation
+    # exams -> 32 volumes, i.e. 768 slices of 512² per encoder forward. Only sets the extraction batch (results are
+    # unchanged); lower than the 2D DINOv2 config's 32 because each batch is ~0.8 GB of float32 input, and 31
+    # workers prefetch two batches each
+    batch_size: 8
+  linear:
+    # The "non-pooling" linear task still pools: this 2D encoder has one cls token per slice, and this is how
+    # they are pooled into the volume's cls token (avg | max). linear_slice_cls uses them unpooled.
+    pooling: avg
+    batchnorm: true  # non-affine BatchNorm1d (z-score) in front of the linear layer
+    epochs: 20
+    batch_size: 32  # exams
+    lr: 0.001
+  linear_pool:
+    pooling: avg
+    batchnorm: true  # non-affine BatchNorm1d (z-score) in front of the linear layer
+    epochs: 20
+    batch_size: 32  # exams
+    lr: 0.001
+  attentive_pool:
+    depth: 1
+    num_heads: 12
+    epochs: 20
+    batch_size: 16  # exams
+    lr: 0.0005
+    warmup_epochs: 5
+    weight_decay: 0.001
+  linear_slice_cls:  # linear layer on all 4 * series_depth slice cls tokens (each L2-normalised, concatenated)
+    batchnorm: true  # non-affine BatchNorm1d (z-score) in front of the linear layer
+    epochs: 20
+    batch_size: 32  # exams
+    lr: 0.001
+  attentive_slice_cls:  # attentive head over the 4 * series_depth slice cls tokens (sequence + slice embeddings)
+    depth: 1
+    num_heads: 12
+    epochs: 20
+    batch_size: 32  # exams
+    lr: 0.0005
+    warmup_epochs: 5
+    weight_decay: 0.001
+  attentive_slice_pool:  # attentive head over all patch tokens with sequence + slice embeddings
+    depth: 1
+    num_heads: 12
+    epochs: 20
+    batch_size: 8  # exams -> 32 volumes, 768 slices per encoder forward
+    lr: 0.0005
+    warmup_epochs: 5
+    weight_decay: 0.001

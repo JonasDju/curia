@@ -9,6 +9,7 @@ dependencies = [
     "datasets>=4.2.0",
     "kneeno",
     "omegaconf>=2.3.0",
+    "pytest>=9.1.1",
     "scikit-learn>=1.7.2",
     "torch>=2.9.0",
     "torchvision>=0.24.0",
@@ -17,3 +18,9 @@ dependencies = [
 
 [tool.uv.sources]
 kneeno = { path = "../KneeNo", editable = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# eval/ is not a package: its scripts import each other as top-level modules (python puts a script's own folder on
+# sys.path), and the tests import them the same way.
+pythonpath = ["eval"]

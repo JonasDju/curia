@@ -7,9 +7,13 @@ requires-python = ">=3.13"
 dependencies = [
     "accelerate>=1.11.0",
     "datasets>=4.2.0",
+    "kneeno",
     "omegaconf>=2.3.0",
     "scikit-learn>=1.7.2",
     "torch>=2.9.0",
     "torchvision>=0.24.0",
     "transformers>=4.57.1",
 ]
+
+[tool.uv.sources]
+kneeno = { path = "../KneeNo", editable = true }

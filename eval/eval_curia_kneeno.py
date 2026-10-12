@@ -6,7 +6,7 @@ eval config (``--config``) is a YAML with exactly
     model_name:  the Hugging Face model to evaluate, e.g. raidium/curia (or a local directory)
     eval:        KneeNo's evaluation config (deep-merged over KneeNo's DEFAULT_EVAL_CONFIG)
 
-Every task with a non-null ``eval.freq`` runs once, logging the whole head fine-tuning curve. Environment variables
+Every task with a non-null ``eval.freq`` runs once and logs its test metrics (heads early-stopped on val). Environment variables
 are expanded in every string value; an unset one is an error. Next to ``eval.logging.per_label_dir`` the script
 writes the final metrics (``results.json``) and the expanded config (``params.yaml``, before evaluating); it refuses
 to start if earlier results exist there. The evaluation runs in a single process: KneeNo evaluates on rank 0 only.
@@ -130,8 +130,7 @@ def evaluate(config_path: Path) -> dict[str, float]:
 
     evaluator = ClassificationEvaluator(config=eval_cfg, adapter=adapter, device=device)
     try:
-        # log_every_head_epoch=True: the point of the standalone run is the head fine-tuning curve itself.
-        metrics = evaluator.evaluate(model, tasks=tasks, epoch=0, log_every_head_epoch=True)
+        metrics = evaluator.evaluate(model, tasks=tasks, epoch=0)
     finally:
         evaluator.cleanup()
 

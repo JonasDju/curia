@@ -26,7 +26,7 @@ def _out_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def config(tmp_path: Path, tiny_curia_dir: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    attentive = {"epochs": 1, "batch_size": 4, "num_heads": 2}
+    attentive = {"max_epochs": 1, "batch_size": 4, "num_heads": 2}
     monkeypatch.setenv("CURIA_TEST_OUT", str(_out_dir(tmp_path)))
     return {
         "model_name": str(tiny_curia_dir),
@@ -39,10 +39,10 @@ def config(tmp_path: Path, tiny_curia_dir: Path, monkeypatch: pytest.MonkeyPatch
             # Every task explicit: a missing key keeps KneeNo's default frequency.
             "freq": {task: 1 for task in ALL_TASKS},
             "knn": {"k": [3], "batch_size": 4},
-            "linear": {"epochs": 1, "batch_size": 4},
-            "linear_pool": {"epochs": 1, "batch_size": 4},
+            "linear": {"max_epochs": 1, "batch_size": 4},
+            "linear_pool": {"max_epochs": 1, "batch_size": 4},
             "attentive_pool": attentive,
-            "linear_slice_cls": {"epochs": 1, "batch_size": 4},
+            "linear_slice_cls": {"max_epochs": 1, "batch_size": 4},
             "attentive_slice_cls": attentive,
             "attentive_slice_pool": attentive,
         },
@@ -91,7 +91,7 @@ def test_evaluate__missing_freq_keeps_default(
     monkeypatch.setattr(ClassificationEvaluator, "evaluate", lambda self, model, **kwargs: calls.append(kwargs) or {})
     eval_curia_kneeno.evaluate(_write(tmp_path, config))
     assert calls[0]["tasks"] == ["knn", "linear", "linear_pool", "attentive_pool", "linear_slice_cls"]
-    assert calls[0]["log_every_head_epoch"] is True
+    assert "log_every_head_epoch" not in calls[0]
 
 
 @pytest.mark.parametrize("existing", ["results.json", "params.yaml", "eval_per_label", "tb"])

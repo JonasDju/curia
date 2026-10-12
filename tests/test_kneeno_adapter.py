@@ -171,15 +171,15 @@ def test_prepare_input__collate__forward_features(adapter: CuriaAdapter, tiny_mo
 def test_evaluator__all_tasks_with_workers(adapter: CuriaAdapter, tiny_model: torch.nn.Module) -> None:
     # Every task (the slice tasks included) through KneeNo's evaluator, with real DataLoader workers: the adapter
     # runs in forked workers there, which num_workers=0 would never exercise.
-    attentive = {"epochs": 1, "batch_size": 4, "num_heads": 2}
+    attentive = {"max_epochs": 1, "batch_size": 4, "num_heads": 2}
     config = {
         "data": {"dataset_type": "internal", "num_workers": 2, "series_depth": DEPTH},
         "freq": {task: 1 for task in ALL_TASKS},
         "knn": {"k": [3], "batch_size": 4},
-        "linear": {"epochs": 1, "batch_size": 4},
-        "linear_pool": {"epochs": 1, "batch_size": 4},
+        "linear": {"max_epochs": 1, "batch_size": 4},
+        "linear_pool": {"max_epochs": 1, "batch_size": 4},
         "attentive_pool": attentive,
-        "linear_slice_cls": {"epochs": 1, "batch_size": 4},
+        "linear_slice_cls": {"max_epochs": 1, "batch_size": 4},
         "attentive_slice_cls": attentive,
         "attentive_slice_pool": attentive,
     }

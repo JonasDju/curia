@@ -4,7 +4,7 @@
 # Exactly two top-level keys: model_name and eval. Env vars ($VAR, ${VAR}, leading ~) are expanded everywhere; an
 # unset one is an error.
 #
-# Outputs, all inside a dedicated folder: TensorBoard head curves (eval.logging.tensorboard_dir), per-label
+# Outputs, all inside a dedicated folder: TensorBoard test metrics (eval.logging.tensorboard_dir), per-label
 # CSVs (eval.logging.per_label_dir), and in the parent of per_label_dir the final metrics (results.json) and this
 # config with env vars expanded (params.yaml). The script refuses to start if any of them already exist.
 
@@ -17,8 +17,14 @@ eval:
   cache_features: true  # linear / linear_pool / linear_slice_cls / attentive_slice_cls train on features extracted
                         # once instead of re-encoding every head epoch; k-NN always uses the shared pass.
                         # attentive_pool / attentive_slice_pool never cache.
-  split:
-    test_fraction: 0.1
+  split:  # fractions of the labeled exams, each > 0, summing to 1
+    train_fraction: 0.8
+    val_fraction: 0.1  # heads are scored on val every head epoch (early stopping)
+    test_fraction: 0.1  # scored once with each head's best val epoch; the reported numbers
+  training:
+    early_stop_on: auroc  # val metric that picks each head's best epoch
+    early_stop_patience: 5  # head epochs without a val improvement before stopping; 0 = never stop early
+  verbose: true  # log each task's start and every head epoch's val metrics
   data:
     data_root: $TMP/kneeno_data/internal
     label_meta: /hpcwork/p0021834/workspace_roman/jonas/BigKneeTar/metadata_labeled.json
@@ -56,32 +62,32 @@ eval:
     # they are pooled into the volume's cls token (avg | max). linear_slice_cls uses them unpooled.
     pooling: avg
     batchnorm: true  # non-affine BatchNorm1d (z-score) in front of the linear layer
-    epochs: 20
+    max_epochs: 20
     batch_size: 32  # exams
     lr: 0.001
   linear_pool:
     pooling: avg
     batchnorm: true  # non-affine BatchNorm1d (z-score) in front of the linear layer
-    epochs: 20
+    max_epochs: 20
     batch_size: 32  # exams
     lr: 0.001
   attentive_pool:
     depth: 1
     num_heads: 12
-    epochs: 20
+    max_epochs: 20
     batch_size: 16  # exams
     lr: 0.0005
     warmup_epochs: 5
     weight_decay: 0.001
   linear_slice_cls:  # linear layer on all 4 * series_depth slice cls tokens (each L2-normalised, concatenated)
     batchnorm: true  # non-affine BatchNorm1d (z-score) in front of the linear layer
-    epochs: 20
+    max_epochs: 20
     batch_size: 32  # exams
     lr: 0.001
   attentive_slice_cls:  # attentive head over the 4 * series_depth slice cls tokens (sequence + slice embeddings)
     depth: 1
     num_heads: 12
-    epochs: 20
+    max_epochs: 20
     batch_size: 32  # exams
     lr: 0.0005
     warmup_epochs: 5
@@ -89,7 +95,7 @@ eval:
   attentive_slice_pool:  # attentive head over all patch tokens with sequence + slice embeddings
     depth: 1
     num_heads: 12
-    epochs: 20
+    max_epochs: 20
     batch_size: 8  # exams -> 32 volumes, 768 slices per encoder forward
     lr: 0.0005
     warmup_epochs: 5

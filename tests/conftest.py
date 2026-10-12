@@ -68,7 +68,7 @@ class FakeLabeledDataset(torch.utils.data.Dataset):
     """Stands in for the labeled KneeNo datasets, which need data on the cluster.
 
     ``raw=True`` mimics LabeledExternalKneeMRIDataset: uint16 volumes far outside 0..255 instead of the internal
-    dataset's uint8 ones. ``orientations`` are the internal dataset's.
+    dataset's uint8 ones, and the source ``"external"``. ``orientations`` are the internal dataset's.
     """
 
     num_classes = 4
@@ -90,4 +90,4 @@ class FakeLabeledDataset(torch.utils.data.Dataset):
             volume = torch.randint(0, 4000 if self.raw else 256, (1, DEPTH, *SLICE_SHAPE), generator=gen)
             volumes.append(torch.from_numpy(volume.numpy().astype(np.uint16 if self.raw else np.uint8)))
         label = (torch.rand(self.num_classes, generator=gen) > 0.5).float()
-        return tuple(volumes), label
+        return tuple(volumes), label, "external" if self.raw else "internal"

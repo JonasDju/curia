@@ -42,13 +42,14 @@ class CuriaAdapter(EncoderAdapter):
     def embed_dim(self) -> int:
         return self._embed_dim
 
-    def prepare_input(self, volume, orientation=None):
+    def prepare_input(self, volume, orientation=None, source=None):
         """``(1, D, H, W)`` raw volume (in [0, 255] for internal / unscaled for external)
         -> ``(1, D, crop_size, crop_size)`` float32 with crop_size being the default AutoImageProcessor value (512).
 
         In contrast to other KneeNo adapters, there is no need to prepare volumes from the internal / external
         dataset in different ways, since Curia's image processor performs z-score normalization and therefore expects
-        "just raw values or normalized image[s]" according to the docs.
+        "just raw values or normalized image[s]" according to the docs. ``source`` (the dataset the volume came
+        from) is therefore ignored.
 
         The processor resizes every slice on its own (bicubic, antialiased), but for a 3D input it z-scores the
         **whole volume** with one mean and std, not each slice (only its 2D path normalizes per image). This is

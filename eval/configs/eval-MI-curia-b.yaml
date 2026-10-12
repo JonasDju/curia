@@ -28,7 +28,7 @@ eval:
   data:
     data_root: $TMP/kneeno_data/internal
     label_meta: /hpcwork/p0021834/workspace_roman/jonas/BigKneeTar/metadata_labeled.json
-    dataset_type: internal
+    dataset_type: internal  # internal | external | mixed (mixed: data_root and label_meta as {internal: ..., external: ...})
     series_depth: 24  # slices per volume the encoder sees one by one; also the slice count of the slice tasks
     resample_mode: nearest
     num_workers: 31

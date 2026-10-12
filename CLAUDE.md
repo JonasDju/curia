@@ -31,7 +31,9 @@ a test). `pre_processor.py` is a different, unused variant (per-slice z-score, a
   resizes each slice (bicubic, antialias) and **z-scores the whole volume** with one mean/std (only its 2D path is
   per image). That is exactly Curia's own 3D benchmark path (`trainer.py::extract_features`), pinned by a test. It
   ignores `do_normalize`. Internal (uint8) and external (raw uint16/float) volumes are handled the same way, no
-  `to_uint8`: Curia documents raw values as input, and the z-score makes intensity scale irrelevant.
+  `to_uint8`: Curia documents raw values as input, and the z-score makes intensity scale irrelevant. So the
+  `source` argument KneeNo passes (`"internal"` / `"external"`, per exam) is ignored; `FakeLabeledDataset` still returns
+  it as the third item element, as every evaluation dataset must.
 - **Orientation:** Curia wants slices `(H, W)` in `PL` (axial), `IL` (coronal), `IP` (sagittal), read as axcodes
   (standard radiological display). KneeNo's labeled datasets (both) return LIP / PIL / SPL in `(D, H, W)` order, so the
   in-plane codes already match and nothing is reoriented. `prepare_input` raises if `orientation[1:]` is anything else

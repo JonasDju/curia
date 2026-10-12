@@ -158,8 +158,8 @@ def test_forward_features__matches_per_slice_encoding(adapter: CuriaAdapter, tin
 
 @pytest.mark.parametrize("raw", [False, True])
 def test_prepare_input__collate__forward_features(adapter: CuriaAdapter, tiny_model: torch.nn.Module, raw: bool) -> None:
-    volumes, _ = FakeLabeledDataset(raw=raw)[0]
-    inputs = [adapter.prepare_input(v, o) for v, o in zip(volumes, FakeLabeledDataset.orientations)]
+    volumes, _, source = FakeLabeledDataset(raw=raw)[0]
+    inputs = [adapter.prepare_input(v, o, source) for v, o in zip(volumes, FakeLabeledDataset.orientations)]
     batch = adapter.collate(inputs)
     assert batch.shape == (4, 1, DEPTH, CROP_SIZE, CROP_SIZE)
     with torch.no_grad():

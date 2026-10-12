@@ -54,7 +54,9 @@ a test). `pre_processor.py` is a different, unused variant (per-slice z-score, a
     the model is loaded) and `results.json`. Refuses if either, `per_label_dir` or `tensorboard_dir` exists; there is
     no overwrite flag.
   - One `evaluate(..., epoch=0)` call: each task logs its test metrics once (KneeNo's train/val/test protocol, heads
-    early-stopped on val; `eval.verbose` logs the val metrics per head epoch). CUDA if available, else CPU.
+    early-stopped on val; `eval.verbose` logs the val metrics per head epoch), plus each trained head's best-epoch
+    `<task>/val_auroc`. CUDA if available, else CPU. The config sets `eval.data.abort_on_io_error: true`: an exam
+    that fails to load raises instead of being replaced by one of another split.
 - `eval/submit_eval_curia_kneeno.sh`: the 2D lightly-train eval sbatch without `PRETRAIN_JOB_ID`. 1 GPU, 1 task,
   32 CPUs, 24 h. Extracts the internal data to `$TMP/kneeno_data`, runs the launcher, cleans up. Env vars (pass with
   `--export=ALL,...`, RWTH's sbatch uses `--export=NONE`): `CONFIG` (default `eval/configs/eval-MI-curia-b.yaml`),

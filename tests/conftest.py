@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
-from kneeno.evaluation.dataset import LabeledInternalKneeMRIDataset
+from kneeno.evaluation.dataset import KneeNoEvalDataset, LabeledInternalKneeMRIDataset
 from transformers import Dinov2Config, Dinov2Model
 
 REPO_DIR = Path(__file__).resolve().parents[1]
@@ -65,22 +65,32 @@ def tiny_model(tiny_curia_dir: Path) -> Dinov2Model:
 
 
 class FakeLabeledDataset(torch.utils.data.Dataset):
-    """Stands in for the labeled KneeNo datasets, which need data on the cluster.
+    """Stands in for one labeled KneeNo dataset (one global split of it), which needs data on the cluster.
 
     ``raw=True`` mimics LabeledExternalKneeMRIDataset: uint16 volumes far outside 0..255 instead of the internal
-    dataset's uint8 ones, and the source ``"external"``. ``orientations`` are the internal dataset's.
+    dataset's uint8 ones, and the source ``"external"``. ``orientations`` are the internal dataset's. ``samples``
+    holds ``(case_id, depths, labels)`` like a real one's, which ``KneeNoEvalDataset`` reads (case ids ``<prefix>0``,
+    ...: distinct prefixes keep its parts' case ids apart).
     """
 
     num_classes = 4
+    label_name_map = {i: f"label_{i}" for i in range(num_classes)}
     # One item is an exam: one volume per sequence, in this order.
     sequences = LabeledInternalKneeMRIDataset.SEQUENCES
     orientations = LabeledInternalKneeMRIDataset.orientations.fget(LabeledInternalKneeMRIDataset)
 
-    def __init__(self, raw: bool = False) -> None:
+    def __init__(self, raw: bool = False, num_exams: int = 12, prefix: str = "c") -> None:
         self.raw = raw
+        self.samples = [
+            (f"{prefix}{i}", (DEPTH,) * len(self.sequences), self._labels(f"{prefix}{i}")) for i in range(num_exams)
+        ]
+
+    def _labels(self, case_id: str) -> list[int]:
+        gen = torch.Generator().manual_seed(sum(map(ord, case_id)))
+        return (torch.rand(self.num_classes, generator=gen) > 0.5).int().tolist()
 
     def __len__(self) -> int:
-        return 12
+        return len(self.samples)
 
     def __getitem__(self, index: int):
         gen = torch.Generator().manual_seed(index)
@@ -89,5 +99,12 @@ class FakeLabeledDataset(torch.utils.data.Dataset):
         for _ in self.sequences:
             volume = torch.randint(0, 4000 if self.raw else 256, (1, DEPTH, *SLICE_SHAPE), generator=gen)
             volumes.append(torch.from_numpy(volume.numpy().astype(np.uint16 if self.raw else np.uint8)))
-        label = (torch.rand(self.num_classes, generator=gen) > 0.5).float()
+        label = torch.tensor(self.samples[index][2], dtype=torch.float32)
         return tuple(volumes), label, "external" if self.raw else "internal"
+
+
+def fake_eval_dataset(test_sets: tuple[str, ...] = ("internal",)) -> KneeNoEvalDataset:
+    """What ``KneeNoEvalDataset.from_config`` would build, from fakes: a 12-exam internal train part and a 6-exam
+    test set per name in ``test_sets`` (``external`` with raw volumes)."""
+    tests = {name: FakeLabeledDataset(raw=name == "external", num_exams=6, prefix=name[0]) for name in test_sets}
+    return KneeNoEvalDataset(FakeLabeledDataset(prefix="t"), tests)

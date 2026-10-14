@@ -53,17 +53,19 @@ a test). `pre_processor.py` is a different, unused variant (per-slice z-score, a
   - Outputs in the parent of `eval.logging.per_label_dir` (required): `params.yaml` (expanded config, written before
     the model is loaded) and `results.json`. Refuses if either, `per_label_dir` or `tensorboard_dir` exists; there is
     no overwrite flag.
-  - One `evaluate(..., epoch=0)` call: each task logs its test metrics once (KneeNo's train/val/test protocol, heads
-    early-stopped on val; `eval.verbose` logs the val metrics per head epoch), plus each trained head's best-epoch
-    `<task>/val_auroc`. CUDA if available, else CPU. The config sets `eval.data.abort_on_io_error: true`: an exam
-    that fails to load raises instead of being replaced by one of another split.
+  - One `evaluate(..., epoch=0)` call: each task logs its metrics once per test set (KneeNo's global-split protocol:
+    heads train on the internal `train` split, early-stopped on val; `eval.verbose` logs the val metrics per head
+    epoch, then the best head is scored on each test set), keys `{test_set}/{task}/{metric}`, plus each trained
+    head's best-epoch `evaluation_val/{task}/val_auroc`. CUDA if available, else CPU. The config sets
+    `eval.data.abort_on_io_error: true`: an exam that fails to load raises instead of being replaced by another one.
 - `eval/submit_eval_curia_kneeno.sh`: the 2D lightly-train eval sbatch without `PRETRAIN_JOB_ID`. 1 GPU, 1 task,
-  32 CPUs, 24 h. Extracts the internal data to `$TMP/kneeno_data`, runs the launcher, cleans up. Env vars (pass with
-  `--export=ALL,...`, RWTH's sbatch uses `--export=NONE`): `CONFIG` (default `eval/configs/eval-MI-curia-b.yaml`),
-  `REPO_DIR`, `KNEENO_DIR`.
+  32 CPUs, 24 h. Extracts the internal and the external data (`--external-tar /hpcwork/p0021834/workspace_roman/jonas/uka_gold_nifti.tar`,
+  hard-coded) to `$TMP/kneeno_data`, runs the launcher, cleans up. Env vars (pass with `--export=ALL,...`, RWTH's
+  sbatch uses `--export=NONE`): `CONFIG` (default `eval/configs/eval-MI-curia-b.yaml`), `REPO_DIR`, `KNEENO_DIR`.
   - **Compute nodes are treated as offline:** the job sets `HF_HUB_OFFLINE=1` and checks the config's `model_name` is
     in the HF cache *before* extracting the data. Download once on the login node: `.venv/bin/hf download raidium/curia`.
 - `eval/configs/eval-MI-curia-b.yaml`: the 2D DINOv2 eval config's `eval:` block (same heads, split, seed, data),
+  `test_sets: [internal, external]` (`label_meta.external`: `/hpcwork/p0021834/workspace_roman/jonas/metadata/external_labeled.json`),
   outputs under `/hpcwork/va105917/curia/curia-b/eval/internal/`, except `knn.batch_size: 8` instead of 32. That only
   sets the shared extraction pass's batch (results unchanged). At 512² a 32-exam batch is ~3 GiB of float32 input,
   and 31 workers × prefetch 2 could exceed the job's ~186 GB. The head batch sizes are kept for comparability; the
@@ -78,7 +80,9 @@ HF_HUB_OFFLINE=1 .venv/bin/python -m pytest tests -q
 
 - `tests/conftest.py`: `tiny_curia_dir`, a local tiny random `Dinov2Model` (1 channel, SwiGLU, 32², patch 8) plus the
   repo-root processor with `crop_size: 32`, loaded through the same `AutoModel` / `AutoImageProcessor` calls, offline.
-  `FakeLabeledDataset` stands in for the labeled datasets (internal `orientations`, uint8 or raw uint16 volumes).
+  `FakeLabeledDataset` stands in for one labeled dataset split (internal `orientations`, uint8 or raw uint16
+  volumes, `samples` with case ids); `fake_eval_dataset(test_sets)` wraps fakes in the `KneeNoEvalDataset` that
+  `from_config` would build (the launcher tests monkeypatch `KneeNoEvalDataset.from_config` to return it).
 - `tests/test_kneeno_adapter.py`: preprocessing (dtypes, whole-volume z-score, slice order, no transpose, orientation
   guard against both datasets' codes), `forward_features` vs. per-slice encoding, a full evaluator run with
   `num_workers=2`, and tests against the real `raidium/curia` (skipped unless it is in the local HF cache).

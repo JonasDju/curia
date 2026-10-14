@@ -55,10 +55,11 @@ except Exception as ex:
     sys.exit(f"Model {name!r} is not in the Hugging Face cache ({ex}); run `.venv/bin/hf download {name}` on the login node")
 PY
 
-# --- Data -> node-local scratch ($TMP/kneeno_data/internal, prepare_data.py's default): the labeled eval dataset;
-# skipped if already populated
+# --- Data -> node-local scratch ($TMP/kneeno_data/{internal,external}, prepare_data.py's default): the labeled
+# eval datasets (internal: train part + "internal" test set; external: "external" test set); each skipped if
+# already populated
 srun "$PYTHON" "$KNEENO_DIR/data/prepare_data.py" --internal-tar-dir /hpcwork/p0021834/workspace_roman/jonas/BigKneeTar \
-     --pool-size 16
+     --external-tar /hpcwork/p0021834/workspace_roman/jonas/uka_gold_nifti.tar --pool-size 16
 
 # --- Evaluation -------------------------------------------------------------------------------------------
 srun "$PYTHON" eval/eval_curia_kneeno.py --config "$CONFIG"

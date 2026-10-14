@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
-from conftest import CROP_SIZE, DEPTH, EMBED_DIM, NUM_PATCHES, REPO_DIR, SLICE_SHAPE, FakeLabeledDataset
+from conftest import CROP_SIZE, DEPTH, EMBED_DIM, NUM_PATCHES, REPO_DIR, SLICE_SHAPE, FakeLabeledDataset, fake_eval_dataset
 from kneeno.evaluation.dataset import LabeledExternalKneeMRIDataset, LabeledInternalKneeMRIDataset
 from kneeno.evaluation import ClassificationEvaluator
 from kneeno.evaluation.adapter import EncoderAdapter
@@ -173,7 +173,7 @@ def test_evaluator__all_tasks_with_workers(adapter: CuriaAdapter, tiny_model: to
     # runs in forked workers there, which num_workers=0 would never exercise.
     attentive = {"max_epochs": 1, "batch_size": 4, "num_heads": 2}
     config = {
-        "data": {"dataset_type": "internal", "num_workers": 2, "series_depth": DEPTH},
+        "data": {"num_workers": 2, "series_depth": DEPTH},
         "freq": {task: 1 for task in ALL_TASKS},
         "knn": {"k": [3], "batch_size": 4},
         "linear": {"max_epochs": 1, "batch_size": 4},
@@ -183,12 +183,13 @@ def test_evaluator__all_tasks_with_workers(adapter: CuriaAdapter, tiny_model: to
         "attentive_slice_cls": attentive,
         "attentive_slice_pool": attentive,
     }
-    evaluator = ClassificationEvaluator(config=config, adapter=adapter, dataset=FakeLabeledDataset(raw=True))
+    dataset = fake_eval_dataset(("internal", "external"))  # uint8 and raw volumes in one evaluation
+    evaluator = ClassificationEvaluator(config=config, adapter=adapter, dataset=dataset)
     try:
         metrics = evaluator.evaluate(tiny_model, tasks=list(ALL_TASKS))
     finally:
         evaluator.cleanup()
-    assert {key.split("/")[0] for key in metrics} == set(ALL_TASKS)
+    assert {key.split("/")[1] for key in metrics} == set(ALL_TASKS)
     assert all(np.isfinite(value) for value in metrics.values())
 
 

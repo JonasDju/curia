@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 import yaml
-from conftest import DEPTH, FakeLabeledDataset
+from conftest import DEPTH, fake_eval_dataset
 from kneeno.evaluation import ClassificationEvaluator, classification, load_eval_config
 from kneeno.evaluation.config import ALL_TASKS
 
@@ -16,8 +16,12 @@ import eval_curia_kneeno
 
 @pytest.fixture(autouse=True)
 def fake_dataset(monkeypatch: pytest.MonkeyPatch) -> None:
-    # The evaluator builds the dataset named by eval.data.dataset_type; build the fake instead.
-    monkeypatch.setattr(classification, "LabeledInternalKneeMRIDataset", lambda *args, **kwargs: FakeLabeledDataset())
+    # The evaluator builds its dataset from eval.data (KneeNoEvalDataset.from_config); build the fakes instead.
+    monkeypatch.setattr(
+        classification.KneeNoEvalDataset,
+        "from_config",
+        staticmethod(lambda data_cfg, seed: fake_eval_dataset(tuple(data_cfg["test_sets"]))),
+    )
 
 
 def _out_dir(tmp_path: Path) -> Path:
@@ -31,7 +35,7 @@ def config(tmp_path: Path, tiny_curia_dir: Path, monkeypatch: pytest.MonkeyPatch
     return {
         "model_name": str(tiny_curia_dir),
         "eval": {
-            "data": {"dataset_type": "internal", "num_workers": 0, "series_depth": DEPTH},
+            "data": {"test_sets": ["internal", "external"], "num_workers": 0, "series_depth": DEPTH},
             "logging": {
                 "tensorboard_dir": "${CURIA_TEST_OUT}/tb",
                 "per_label_dir": "$CURIA_TEST_OUT/eval_per_label",
@@ -64,7 +68,14 @@ def test_evaluate(tmp_path: Path, config: dict[str, Any]) -> None:
     eval_curia_kneeno.evaluate(_write(tmp_path, _only(config, ["knn", "linear"])))
     out_dir = _out_dir(tmp_path)
     metrics = json.loads((out_dir / "results.json").read_text())
-    assert {key.split("/")[0] for key in metrics} == {"knn", "linear"}
+    # Every test set's metrics, plus the trained head's best val metric.
+    assert {key.rsplit("/", 1)[0] for key in metrics} == {
+        "internal/knn/k3",
+        "external/knn/k3",
+        "internal/linear",
+        "external/linear",
+        "evaluation_val/linear",
+    }
     # params.yaml is the config file with env vars expanded, in the file's key order.
     params = (out_dir / "params.yaml").read_text()
     assert "CURIA_TEST_OUT" not in params
@@ -78,7 +89,8 @@ def test_evaluate__all_tasks(tmp_path: Path, config: dict[str, Any]) -> None:
     # Curia serves every task: it has a cls token, and one per slice.
     eval_curia_kneeno.evaluate(_write(tmp_path, config))
     metrics = json.loads((_out_dir(tmp_path) / "results.json").read_text())
-    assert {key.split("/")[0] for key in metrics} == set(ALL_TASKS)
+    assert {key.split("/")[1] for key in metrics} == set(ALL_TASKS)
+    assert {key.split("/")[0] for key in metrics} == {"internal", "external", "evaluation_val"}
     assert all(math.isfinite(value) for value in metrics.values())
 
 
@@ -156,6 +168,10 @@ def test_shipped_config() -> None:
         mp.setenv("TMP", "/tmp/job")
         config = eval_curia_kneeno.load_config(path)
     assert config["model_name"] == "raidium/curia"
-    assert config["eval"]["data"]["data_root"] == "/tmp/job/kneeno_data/internal"
+    assert config["eval"]["data"]["data_root"] == {
+        "internal": "/tmp/job/kneeno_data/internal",
+        "external": "/tmp/job/kneeno_data/external",
+    }
+    assert config["eval"]["data"]["test_sets"] == ["internal", "external"]
     assert config["eval"]["data"]["series_depth"] > 0  # the slice-wise adapter keeps the depth
     assert eval_curia_kneeno.enabled_tasks(load_eval_config(config["eval"])["freq"]) == list(ALL_TASKS)

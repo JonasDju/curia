@@ -22,6 +22,7 @@ eval:
   training:
     early_stop_on: auroc  # val metric that picks each head's best epoch
     early_stop_patience: 5  # head epochs without a val improvement before stopping; 0 = never stop early
+    loss: BCE
   verbose: true  # log each task's start and every head epoch's val metrics
   data:
     # internal: global "train" (the heads' train/val) + "val" (the "internal" test set); external: global "test".
@@ -61,45 +62,63 @@ eval:
     # workers prefetch two batches each
     batch_size: 8
   linear:
-    # The "non-pooling" linear task still pools: this 2D encoder has one cls token per slice, and this is how
-    # they are pooled into the volume's cls token (avg | max). linear_slice_cls uses them unpooled.
     pooling: avg
     batchnorm: true  # non-affine BatchNorm1d (z-score) in front of the linear layer
-    max_epochs: 20
-    batch_size: 32  # exams
-    lr: 0.001
+    max_epochs: 50
+    batch_size: 64  # exams
+    lr: 0.0015
+    warmup_epochs: 10
+    weight_decay: 0.0
   linear_pool:
     pooling: avg
     batchnorm: true  # non-affine BatchNorm1d (z-score) in front of the linear layer
-    max_epochs: 20
-    batch_size: 32  # exams
-    lr: 0.001
+    max_epochs: 50
+    batch_size: 64  # exams
+    lr: 0.0015
+    warmup_epochs: 10
+    weight_decay: 0.0
   attentive_pool:
-    depth: 1
-    num_heads: 12
-    max_epochs: 20
-    batch_size: 16  # exams
+    q2l: false
+    patch_sa_depth: 0
+    qa_depth: 1
+    num_heads: 16
+    mlp_ratio: 4.0
+    qkv_bias: true
+    complete_block: true
+    max_epochs: 50
+    batch_size: 16
     lr: 0.0005
-    warmup_epochs: 5
+    warmup_epochs: 10
     weight_decay: 0.001
-  linear_slice_cls:  # linear layer on all 4 * series_depth slice cls tokens (each L2-normalised, concatenated)
-    batchnorm: true  # non-affine BatchNorm1d (z-score) in front of the linear layer
-    max_epochs: 20
-    batch_size: 32  # exams
-    lr: 0.001
-  attentive_slice_cls:  # attentive head over the 4 * series_depth slice cls tokens (sequence + slice embeddings)
-    depth: 1
-    num_heads: 12
-    max_epochs: 20
-    batch_size: 32  # exams
-    lr: 0.0005
-    warmup_epochs: 5
+  linear_slice_cls:
+    batchnorm: true
+    max_epochs: 50
+    batch_size: 64
+    lr: 0.0015
+    warmup_epochs: 10
+    weight_decay: 0.0
+  attentive_slice_cls:
+    q2l: false
+    patch_sa_depth: 0
+    qa_depth: 1
+    num_heads: 16
+    mlp_ratio: 4.0
+    qkv_bias: true
+    complete_block: true
+    max_epochs: 50
+    batch_size: 64
+    lr: 0.0015
+    warmup_epochs: 10
     weight_decay: 0.001
-  attentive_slice_pool:  # attentive head over all patch tokens with sequence + slice embeddings
-    depth: 1
-    num_heads: 12
-    max_epochs: 20
-    batch_size: 8  # exams -> 32 volumes, 768 slices per encoder forward
-    lr: 0.0005
-    warmup_epochs: 5
+  attentive_slice_pool:
+    q2l: false
+    patch_sa_depth: 0
+    qa_depth: 1
+    num_heads: 16
+    qkv_bias: true
+    complete_block: true
+    max_epochs: 50
+    batch_size: 16
+    lr: 0.005
+    warmup_epochs: 10
     weight_decay: 0.001

@@ -66,10 +66,13 @@ a test). `pre_processor.py` is a different, unused variant (per-slice z-score, a
     in the HF cache *before* extracting the data. Download once on the login node: `.venv/bin/hf download raidium/curia`.
 - `eval/configs/eval-MI-curia-b.yaml`: the 2D DINOv2 eval config's `eval:` block (same heads, split, seed, data),
   `test_sets: [internal, external]` (`label_meta.external`: `/hpcwork/p0021834/workspace_roman/jonas/metadata/external_labeled.json`),
-  outputs under `/hpcwork/va105917/curia/curia-b/eval/internal/`, except `knn.batch_size: 8` instead of 32. That only
-  sets the shared extraction pass's batch (results unchanged). At 512² a 32-exam batch is ~3 GiB of float32 input,
-  and 31 workers × prefetch 2 could exceed the job's ~186 GB. The head batch sizes are kept for comparability; the
-  re-encoding tasks still load 16 (`attentive_pool`) and 8 (`attentive_slice_pool`) exams per batch.
+  outputs under `/hpcwork/va105917/curia/curia-b/eval/internal/`, except for three memory-only settings (results
+  unchanged): `extraction_batch_size: 4` instead of 32, `data.prefetch_factor: 1`, and `grad_accum_steps: 4` for
+  `attentive_pool` and `attentive_slice_pool`. At 512² a 32-exam batch is ~3 GiB of float32 input, and 8 exams with
+  31 workers × prefetch 2 already ran out of worker RAM in the cache pass. The head batch sizes (`batch_size`) are
+  kept for comparability. `extraction_batch_size` caps every encoder call at 4 exams, in the cache pass and in the
+  re-encoding tasks; `grad_accum_steps` only sets the head's micro-batch (here 16 / 4 = 4). Once a run shows how
+  big a head micro-batch fits, lower `grad_accum_steps`; the encoder side stays at 4.
 - Not run on the cluster yet.
 
 ## Testing

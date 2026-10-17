@@ -175,7 +175,8 @@ def test_evaluator__all_tasks_with_workers(adapter: CuriaAdapter, tiny_model: to
     config = {
         "data": {"num_workers": 2, "series_depth": DEPTH},
         "freq": {task: 1 for task in ALL_TASKS},
-        "knn": {"k": [3], "batch_size": 4},
+        "knn": {"k": [3]},
+        "extraction_batch_size": 4,
         "linear": {"max_epochs": 1, "batch_size": 4},
         "linear_pool": {"max_epochs": 1, "batch_size": 4},
         "attentive_pool": attentive,

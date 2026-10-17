@@ -17,6 +17,7 @@ eval:
   cache_features: true  # linear / linear_pool / linear_slice_cls / attentive_slice_cls train on features extracted
                         # once instead of re-encoding every head epoch; k-NN always uses the shared pass.
                         # attentive_pool / attentive_slice_pool never cache.
+  extraction_batch_size: 8
   split:  # the internal global "train" split is cut into train and val; the test sets are used whole
     val_fraction: 0.2  # heads are scored on val every head epoch (early stopping)
   training:
@@ -35,6 +36,7 @@ eval:
     series_depth: 24  # slices per volume the encoder sees one by one; also the slice count of the slice tasks
     resample_mode: nearest
     num_workers: 31
+    prefetch_factor: 8  # batches each worker loads ahead; worker RAM in flight ~ num_workers * prefetch_factor batches
     subset: 1.0  # seeded subsample of the internal "train" EXAMS (test sets always whole): float in (0, 1] = fraction, int > 1 = count, 1.0 = all
     abort_on_io_error: true  # a broken exam is retried (5 s apart) and then raises; never replaced by another exam
     multiprocessing_context: fork  # eval DataLoader worker start method; null -> inherit. Workers must never touch CUDA
@@ -57,15 +59,12 @@ eval:
     temperature: 0.07
     pooling: avg  # how the per-slice cls tokens are pooled into one per volume (avg | max)
     center: true  # subtract each sequence's mean feature before the per-sequence L2 normalisation
-    # exams -> 32 volumes, i.e. 768 slices of 512² per encoder forward. Only sets the extraction batch (results are
-    # unchanged); lower than the 2D DINOv2 config's 32 because each batch is ~0.8 GB of float32 input, and 31
-    # workers prefetch two batches each
-    batch_size: 8
   linear:
     pooling: avg
     batchnorm: true  # non-affine BatchNorm1d (z-score) in front of the linear layer
     max_epochs: 50
     batch_size: 64  # exams
+    grad_accum_steps: 1  # must stay 1 with batchnorm: true
     lr: 0.0015
     warmup_epochs: 10
     weight_decay: 0.0
@@ -74,6 +73,7 @@ eval:
     batchnorm: true  # non-affine BatchNorm1d (z-score) in front of the linear layer
     max_epochs: 50
     batch_size: 64  # exams
+    grad_accum_steps: 1  # must stay 1 with batchnorm: true
     lr: 0.0015
     warmup_epochs: 10
     weight_decay: 0.0
@@ -87,6 +87,7 @@ eval:
     complete_block: true
     max_epochs: 50
     batch_size: 16
+    grad_accum_steps: 1  # memory only: the head trains on micro-batches of batch_size / grad_accum_steps = 4 exams
     lr: 0.0005
     warmup_epochs: 10
     weight_decay: 0.001
@@ -94,6 +95,7 @@ eval:
     batchnorm: true
     max_epochs: 50
     batch_size: 64
+    grad_accum_steps: 1  # must stay 1 with batchnorm: true
     lr: 0.0015
     warmup_epochs: 10
     weight_decay: 0.0
@@ -107,6 +109,7 @@ eval:
     complete_block: true
     max_epochs: 50
     batch_size: 64
+    grad_accum_steps: 1  # memory only: the head trains on micro-batches of batch_size / grad_accum_steps exams
     lr: 0.0015
     warmup_epochs: 10
     weight_decay: 0.001
@@ -119,6 +122,7 @@ eval:
     complete_block: true
     max_epochs: 50
     batch_size: 16
+    grad_accum_steps: 1  # memory only: the head trains on micro-batches of batch_size / grad_accum_steps = 4 exams
     lr: 0.005
     warmup_epochs: 10
     weight_decay: 0.001

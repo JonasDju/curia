@@ -42,7 +42,8 @@ def config(tmp_path: Path, tiny_curia_dir: Path, monkeypatch: pytest.MonkeyPatch
             },
             # Every task explicit: a missing key keeps KneeNo's default frequency.
             "freq": {task: 1 for task in ALL_TASKS},
-            "knn": {"k": [3], "batch_size": 4},
+            "knn": {"k": [3]},
+            "extraction_batch_size": 4,
             "linear": {"max_epochs": 1, "batch_size": 4},
             "linear_pool": {"max_epochs": 1, "batch_size": 4},
             "attentive_pool": attentive,

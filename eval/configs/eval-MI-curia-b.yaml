@@ -123,6 +123,6 @@ eval:
     max_epochs: 50
     batch_size: 16
     grad_accum_steps: 1  # memory only: the head trains on micro-batches of batch_size / grad_accum_steps = 4 exams
-    lr: 0.005
+    lr: 0.0005
     warmup_epochs: 10
     weight_decay: 0.001

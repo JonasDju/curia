@@ -1,21 +1,22 @@
 #!/bin/bash
-# Profiles where an attentive_pool head epoch spends its time (eval/profile_attentive_pool.py). Submit from the
-# repo root:
+# Profiles where an attentive_pool head epoch spends its time, and what each speed-up costs in numerical accuracy
+# (eval/profile_attentive_pool.py). Submit from the repo root:
 #     sbatch eval/submit_profile_attentive_pool.sh
 # Env vars (pass with --export=ALL,..., RWTH's sbatch uses --export=NONE): CONFIG (default
 # eval/configs/profile-attentive-pool.yaml), OUT_DIR (default /hpcwork/va105917/curia/profile/<job id>; must not
 # exist), TASK (attentive_pool or attentive_slice_pool, default attentive_pool), REPO_DIR, KNEENO_DIR.
 #
-# Seven runs of 26 head micro-batches (16 exams each at the default settings) take ~15-20 min after the ~2 min
-# data extraction. Like the evaluation, it needs the model in the HF cache (`.venv/bin/hf download raidium/curia`
-# on the login node) and runs with HF_HUB_OFFLINE=1.
+# Twelve runs of 26 head micro-batches (16 exams each at the default settings) take ~30-40 min after the ~2 min
+# data extraction, including the compilation of the compiled encoders (twice each: the runs' and the numerics
+# check's input shape). Like the evaluation, it needs the model in the HF cache
+# (`.venv/bin/hf download raidium/curia` on the login node) and runs with HF_HUB_OFFLINE=1.
 ##SBATCH --account=truhnlab
 ##SBATCH --partition=truhnlab
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=32
-#SBATCH --time=01:30:00
+#SBATCH --time=02:00:00
 #SBATCH --job-name=curia-b-profile
 #SBATCH --output=slurm-%j-curia_profile_attentive_pool.out
 

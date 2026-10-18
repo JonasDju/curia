@@ -17,9 +17,10 @@ MICRO = 2  # head micro-batch (exams)
 
 @pytest.fixture(autouse=True)
 def fake_dataset(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Enough train exams for every run: 7 runs x (1 + 2 + 1) micro-batches x 2 exams = 56 of the 80 x 0.8 = 64.
+    # Enough train exams for every run: 12 runs x (1 + 2 + 1) micro-batches x 2 exams + 2 numerics exams = 98 of
+    # the 160 x 0.8 = 128.
     dataset = KneeNoEvalDataset(
-        FakeLabeledDataset(prefix="t", num_exams=80), {"internal": FakeLabeledDataset(num_exams=6, prefix="i")}
+        FakeLabeledDataset(prefix="t", num_exams=160), {"internal": FakeLabeledDataset(num_exams=6, prefix="i")}
     )
     monkeypatch.setattr(classification.KneeNoEvalDataset, "from_config", staticmethod(lambda data_cfg, seed: dataset))
 
@@ -61,15 +62,48 @@ def test_every_run_reports_its_phases(tmp_path: Path, tiny_curia_dir: Path, task
     assert json.loads((out_dir / "report.json").read_text()) == report
     assert (out_dir / "params.yaml").exists()
 
+    numerics = {name: report["runs"][name]["numerics"] for name in profile_attentive_pool.VARIANTS}
+    # On the CPU there is no autocast: the baseline encoder is the float32 reference itself.
+    assert numerics["baseline"]["encoder_err"] == 0
+    assert numerics["encoder_bf16"]["encoder_err"] > 1e-4
+    for name in ("baseline", "pin_memory", "free_prev", "math_sdpa", "exact"):
+        # float32 against float64: rounding only
+        assert numerics[name]["head_grad_err"] < 1e-5, name
+        assert numerics[name]["end_to_end_err"] < 1e-4, name
+    assert numerics["pin_memory"] == numerics["free_prev"] == numerics["baseline"]
+
 
 def test_grad_accumulation_without_profiling(tmp_path: Path, tiny_curia_dir: Path) -> None:
     config = _config(tmp_path, tiny_curia_dir, num_workers=0, grad_accum_steps=2)
     report = profile_attentive_pool.profile(
-        config, tmp_path / "out", variants=("baseline",), warmup=0, steps=3, profile_steps=0
+        config, tmp_path / "out", variants=("baseline",), warmup=0, steps=3, profile_steps=0, numerics_exams=0
     )
 
     assert report["runs"]["baseline"]["exams"] == 3 * MICRO
+    assert "numerics" not in report["runs"]["baseline"]
     assert not (tmp_path / "out" / "baseline").exists()
+
+
+def test_a_failing_variant_leaves_the_others(
+    tmp_path: Path, tiny_curia_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    broken_options = {"math_sdpa": True}
+    monkeypatch.setitem(profile_attentive_pool.VARIANTS, "broken", broken_options)
+    real_run_variant = profile_attentive_pool._run_variant
+
+    def run_variant(evaluator: Any, encoders: Any, task: str, indices: Any, options: dict, *rest: Any) -> Any:
+        if options is broken_options:
+            raise RuntimeError("CUDA out of memory")
+        return real_run_variant(evaluator, encoders, task, indices, options, *rest)
+
+    monkeypatch.setattr(profile_attentive_pool, "_run_variant", run_variant)
+    config = _config(tmp_path, tiny_curia_dir, num_workers=0)
+    report = profile_attentive_pool.profile(
+        config, tmp_path / "out", variants=("broken", "baseline"), warmup=0, steps=1, profile_steps=0
+    )
+
+    assert report["runs"]["broken"] == {"error": "RuntimeError: CUDA out of memory"}
+    assert report["runs"]["baseline"]["exams"] == MICRO
 
 
 def test_analytic_flops_of_curia_b() -> None:

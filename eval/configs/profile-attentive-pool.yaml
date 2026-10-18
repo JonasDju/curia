@@ -1,0 +1,57 @@
+# Config for eval/profile_attentive_pool.py (--config): the settings of the first full Curia-B evaluation run
+# (2026-10-18, ~127 min per attentive_pool head epoch), taken from that run's logged config, so the profile
+# reproduces it. Not the shipped eval config (eval-MI-curia-b.yaml), which differs in extraction_batch_size,
+# num_workers and prefetch_factor. Submit with
+#     sbatch eval/submit_profile_attentive_pool.sh
+# Same format as the eval configs (model_name + eval). Only the internal data is needed: the profile trains the
+# head on internal train exams and never scores a test set. freq is irrelevant (the script picks the task).
+
+model_name: raidium/curia
+
+eval:
+  seed: 239
+  amp_dtype: bfloat16
+  extraction_batch_size: 16  # exams per encoder call
+  check_batch_invariance: false  # never run: the script does not call evaluate()
+  split:
+    val_fraction: 0.2
+  training:
+    loss: BCE
+  data:
+    data_root: {internal: $TMP/kneeno_data/internal}
+    label_meta: {internal: /hpcwork/p0021834/workspace_roman/jonas/metadata/internal_labeled.json}
+    test_sets: [internal]
+    series_depth: 24
+    resample_mode: nearest
+    num_workers: 8
+    prefetch_factor: 2
+    abort_on_io_error: true
+    multiprocessing_context: fork
+    persistent_workers: true
+  logging:  # nothing is evaluated, so nothing is logged
+    tensorboard_dir: null
+    per_label_dir: null
+  attentive_pool:
+    q2l: false
+    patch_sa_depth: 0
+    qa_depth: 1
+    num_heads: 16
+    mlp_ratio: 4.0
+    qkv_bias: true
+    complete_block: true
+    batch_size: 16
+    grad_accum_steps: 1
+    lr: 0.0005
+    weight_decay: 0.001
+  attentive_slice_pool:
+    q2l: false
+    patch_sa_depth: 0
+    qa_depth: 1
+    num_heads: 16
+    mlp_ratio: 4.0
+    qkv_bias: true
+    complete_block: true
+    batch_size: 16
+    grad_accum_steps: 1
+    lr: 0.0005
+    weight_decay: 0.001

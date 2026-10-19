@@ -9,7 +9,7 @@ import pytest
 import yaml
 from conftest import DEPTH, fake_eval_dataset
 from kneeno.evaluation import ClassificationEvaluator, classification, load_eval_config
-from kneeno.evaluation.config import ALL_TASKS
+from kneeno.evaluation.config import ALL_TASKS, TRAINED_TASKS
 
 import eval_curia_kneeno
 
@@ -95,15 +95,15 @@ def test_evaluate__all_tasks(tmp_path: Path, config: dict[str, Any]) -> None:
     assert all(math.isfinite(value) for value in metrics.values())
 
 
-def test_evaluate__missing_freq_keeps_default(
+def test_evaluate__missing_freq_is_off(
     tmp_path: Path, config: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The deep-merge trap: a task left out of freq keeps KneeNo's default frequency.
+    # A task left out of freq keeps KneeNo's default frequency, which is null (off) for every task since KneeNo 77839f0.
     config["eval"]["freq"] = {"linear_slice_cls": 1}
     calls = []
     monkeypatch.setattr(ClassificationEvaluator, "evaluate", lambda self, model, **kwargs: calls.append(kwargs) or {})
     eval_curia_kneeno.evaluate(_write(tmp_path, config))
-    assert calls[0]["tasks"] == ["knn", "linear", "linear_pool", "attentive_pool", "linear_slice_cls"]
+    assert calls[0]["tasks"] == ["linear_slice_cls"]
     assert "log_every_head_epoch" not in calls[0]
 
 
@@ -163,7 +163,8 @@ def test_evaluate__invalid_eval_block(tmp_path: Path, config: dict[str, Any], ch
 
 
 def test_shipped_config() -> None:
-    # The shipped config loads (with $TMP set, as in the job) and enables every task.
+    # The shipped config loads (with $TMP set, as in the job) and enables every task but attentive_pool, which is
+    # deliberately off (attentive_slice_pool sees the same tokens and knows their slice).
     path = Path(__file__).resolve().parents[1] / "eval" / "configs" / "eval-MI-curia-b.yaml"
     with pytest.MonkeyPatch.context() as mp:
         mp.setenv("TMP", "/tmp/job")
@@ -175,4 +176,10 @@ def test_shipped_config() -> None:
     }
     assert config["eval"]["data"]["test_sets"] == ["internal", "external"]
     assert config["eval"]["data"]["series_depth"] > 0  # the slice-wise adapter keeps the depth
-    assert eval_curia_kneeno.enabled_tasks(load_eval_config(config["eval"])["freq"]) == list(ALL_TASKS)
+    eval_cfg = load_eval_config(config["eval"])
+    assert eval_curia_kneeno.enabled_tasks(eval_cfg["freq"]) == [task for task in ALL_TASKS if task != "attentive_pool"]
+    # No early stopping, except for the two heads that re-encode every head epoch (no feature cache).
+    assert eval_cfg["training"]["early_stop_patience_global"] == 0
+    assert {task: eval_cfg[task]["early_stop_patience"] for task in TRAINED_TASKS} == {
+        task: 10 if task in ("attentive_pool", "attentive_slice_pool") else None for task in TRAINED_TASKS
+    }

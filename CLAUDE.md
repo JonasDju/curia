@@ -66,15 +66,20 @@ a test). `pre_processor.py` is a different, unused variant (per-slice z-score, a
     in the HF cache *before* extracting the data. Download once on the login node: `.venv/bin/hf download raidium/curia`.
 - `eval/configs/eval-MI-curia-b.yaml`: the 2D DINOv2 eval config's `eval:` block (same heads, split, seed, data),
   `test_sets: [internal, external]` (`label_meta.external`: `/hpcwork/p0021834/workspace_roman/jonas/metadata/external_labeled.json`),
-  outputs under `/hpcwork/va105917/curia/curia-b/eval/internal/`, except for three memory-only settings (results
-  unchanged): `extraction_batch_size: 4` instead of 32, `data.prefetch_factor: 1`, and `grad_accum_steps: 4` for
-  `attentive_pool` and `attentive_slice_pool`. At 512² a 32-exam batch is ~3 GiB of float32 input, and 8 exams with
-  31 workers × prefetch 2 already ran out of worker RAM in the cache pass. The head batch sizes (`batch_size`) are
-  kept for comparability. `extraction_batch_size` caps every encoder call at 4 exams, in the cache pass and in the
-  re-encoding tasks; `grad_accum_steps` only sets the head's micro-batch (here 16 / 4 = 4). Once a run shows how
-  big a head micro-batch fits, lower `grad_accum_steps`; the encoder side stays at 4. `compile_encoder: true`
-  (KneeNo's `torch.compile` of the encoder forward, rounding-only): the encoder took 57 instead of 86 ms per exam
-  in the profile (H100).
+  outputs under `/hpcwork/va105917/curia/curia-b/eval/internal/`.
+  - `attentive_pool` is off (`freq: null`): it is the weaker variant of `attentive_slice_pool` (same tokens, without
+    knowing their slice) and takes hours.
+  - Early stopping: `training.early_stop_patience_global: 0` (none) except `early_stop_patience: 10` on the two
+    re-encoding heads, `attentive_pool` and `attentive_slice_pool` (the cross-repo rule, see `MA/CLAUDE.md`).
+  - Memory-only settings (results unchanged): `extraction_batch_size: 8` instead of 32, `data.prefetch_factor: 8`,
+    `grad_accum_steps: 1` on every head. At 512² a 32-exam batch is ~3 GiB of float32 input. An earlier run with
+    8 exams per batch, 31 workers and prefetch 2 ran out of worker RAM in the cache pass. A later commit
+    (`07e2ea3`) set 8 / 8 / 1 while this file still said 4 / 1 / 4, so 8 / 8 / 1 is unverified on the cluster. The
+    head batch sizes (`batch_size`) are kept for comparability. `extraction_batch_size` caps every encoder call,
+    in the cache pass and in the re-encoding tasks; `grad_accum_steps` only sets the head's micro-batch
+    (`batch_size / grad_accum_steps`). If a re-encoding head runs out of GPU memory, raise its `grad_accum_steps`.
+  - `compile_encoder: true` (KneeNo's `torch.compile` of the encoder forward, rounding-only): the encoder took 57
+    instead of 86 ms per exam in the profile (H100).
 - Not run on the cluster yet.
 
 ## Testing
@@ -92,6 +97,7 @@ HF_HUB_OFFLINE=1 .venv/bin/python -m pytest tests -q
   guard against both datasets' codes), `forward_features` vs. per-slice encoding, a full evaluator run with
   `num_workers=2`, and tests against the real `raidium/curia` (skipped unless it is in the local HF cache).
 - `tests/test_eval_curia_kneeno.py`: the launcher end to end (all tasks, outputs, env var expansion), task selection,
-  refusal on existing results, config errors, and that the shipped config loads.
+  refusal on existing results, config errors, and the shipped config: it loads, enables every task but
+  `attentive_pool`, and has the patience settings above.
 - `pytest` puts `eval/` on `sys.path` (`[tool.pytest.ini_options] pythonpath`): it is not a package, and the
   launcher imports `kneeno_adapter` as a sibling module.

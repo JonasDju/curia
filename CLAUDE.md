@@ -72,7 +72,9 @@ a test). `pre_processor.py` is a different, unused variant (per-slice z-score, a
   31 workers × prefetch 2 already ran out of worker RAM in the cache pass. The head batch sizes (`batch_size`) are
   kept for comparability. `extraction_batch_size` caps every encoder call at 4 exams, in the cache pass and in the
   re-encoding tasks; `grad_accum_steps` only sets the head's micro-batch (here 16 / 4 = 4). Once a run shows how
-  big a head micro-batch fits, lower `grad_accum_steps`; the encoder side stays at 4.
+  big a head micro-batch fits, lower `grad_accum_steps`; the encoder side stays at 4. `compile_encoder: true`
+  (KneeNo's `torch.compile` of the encoder forward, rounding-only): the encoder took 57 instead of 86 ms per exam
+  in the profile (H100).
 - Not run on the cluster yet.
 
 ## Testing

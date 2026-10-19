@@ -14,6 +14,9 @@ model_name: raidium/curia
 eval:
   seed: 239
   amp_dtype: bfloat16  # frozen-encoder forward under autocast (CUDA only); null -> float32. Heads still train in float32.
+  # torch.compile the frozen encoder's forward (one graph per batch shape): faster (Curia-B: 1.5x), the features
+  # differ by float rounding only.
+  compile_encoder: true
   cache_features: true  # linear / linear_pool / linear_slice_cls / attentive_slice_cls train on features extracted
                         # once instead of re-encoding every head epoch; k-NN always uses the shared pass.
                         # attentive_pool / attentive_slice_pool never cache.

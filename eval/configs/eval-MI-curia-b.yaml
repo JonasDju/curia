@@ -82,8 +82,8 @@ eval:
     weight_decay: 0.0
   attentive_pool:
     q2l: false
-    patch_sa_depth: 0
-    qa_depth: 1
+    encoder_layers: 0
+    decoder_layers: 1
     num_heads: 16
     mlp_ratio: 4.0
     qkv_bias: true
@@ -105,8 +105,8 @@ eval:
     weight_decay: 0.0
   attentive_slice_cls:
     q2l: false
-    patch_sa_depth: 0
-    qa_depth: 1
+    encoder_layers: 0
+    decoder_layers: 1
     num_heads: 16
     mlp_ratio: 4.0
     qkv_bias: true
@@ -119,8 +119,8 @@ eval:
     weight_decay: 0.001
   attentive_slice_pool:
     q2l: false
-    patch_sa_depth: 0
-    qa_depth: 1
+    encoder_layers: 0
+    decoder_layers: 1
     num_heads: 16
     qkv_bias: true
     complete_block: true

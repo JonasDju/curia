@@ -69,13 +69,14 @@ def test_evaluate(tmp_path: Path, config: dict[str, Any]) -> None:
     eval_curia_kneeno.evaluate(_write(tmp_path, _only(config, ["knn", "linear"])))
     out_dir = _out_dir(tmp_path)
     metrics = json.loads((out_dir / "results.json").read_text())
-    # Every test set's metrics, plus the trained head's best val metric.
+    # Every test set's metrics, plus the trained head's best val metric and lr, and k-NN's val metric and temperature.
     assert {key.rsplit("/", 1)[0] for key in metrics} == {
         "internal/knn/k3",
         "external/knn/k3",
         "internal/linear",
         "external/linear",
         "evaluation_val/linear",
+        "evaluation_val/knn/k3",
     }
     # params.yaml is the config file with env vars expanded, in the file's key order.
     params = (out_dir / "params.yaml").read_text()
@@ -181,5 +182,5 @@ def test_shipped_config() -> None:
     # No early stopping, except for the two heads that re-encode every head epoch (no feature cache).
     assert eval_cfg["training"]["early_stop_patience_global"] == 0
     assert {task: eval_cfg[task]["early_stop_patience"] for task in TRAINED_TASKS} == {
-        task: 10 if task in ("attentive_pool", "attentive_slice_pool") else None for task in TRAINED_TASKS
+        task: 5 if task in ("attentive_pool", "attentive_slice_pool") else None for task in TRAINED_TASKS
     }

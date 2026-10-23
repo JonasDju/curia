@@ -56,7 +56,8 @@ a test). `pre_processor.py` is a different, unused variant (per-slice z-score, a
   - One `evaluate(..., epoch=0)` call: each task logs its metrics once per test set (KneeNo's global-split protocol:
     heads train on the internal `train` split, early-stopped on val; `eval.verbose` logs the val metrics per head
     epoch, then the best head is scored on each test set), keys `{test_set}/{task}/{metric}`, plus each trained
-    head's best-epoch `evaluation_val/{task}/val_auroc`. CUDA if available, else CPU. The config sets
+    head's best-epoch `evaluation_val/{task}/val_auroc` and chosen `evaluation_val/{task}/lr`, and k-NN each k's
+    `evaluation_val/knn/k{k}/val_auroc` and chosen `.../temperature`. CUDA if available, else CPU. The config sets
     `eval.data.abort_on_io_error: true`: an exam that fails to load raises instead of being replaced by another one.
 - `eval/submit_eval_curia_kneeno.sh`: the 2D lightly-train eval sbatch without `PRETRAIN_JOB_ID`. 1 GPU, 1 task,
   32 CPUs, 24 h. Extracts the internal and the external data (`--external-tar /hpcwork/p0021834/workspace_roman/jonas/uka_gold_nifti.tar`,
@@ -69,13 +70,19 @@ a test). `pre_processor.py` is a different, unused variant (per-slice z-score, a
   outputs under `/hpcwork/va105917/curia/curia-b/eval/internal/`.
   - `attentive_pool` is off (`freq: null`): it is the weaker variant of `attentive_slice_pool` (same tokens, without
     knowing their slice) and takes hours.
-  - Early stopping: `training.early_stop_patience_global: 0` (none) except `early_stop_patience: 10` on the two
+  - Early stopping: `training.early_stop_patience_global: 0` (none) except `early_stop_patience: 5` on the two
     re-encoding heads, `attentive_pool` and `attentive_slice_pool` (the cross-repo rule, see `MA/CLAUDE.md`).
+  - Sweeps (since 2026-10-23): `lr: [0.0001, ..., 0.02]` (8 values) on `linear`, `linear_pool` and
+    `linear_slice_cls`, and `knn.temperature: [0.01, ..., 1.0]` (8 values). Every attentive task has `lr: 0.0005`.
+    The two re-encoding heads train with batch 64 as 4 micro-batches of 16 (`grad_accum_steps: 4`),
+    `max_epochs: 15` and `warmup_epochs: 3`.
+  - `encoder_amp_dtype: bfloat16` (`amp_dtype` before), `head_amp_dtype: null`, `compile_attentive_heads: true`.
   - Memory-only settings (results unchanged): `extraction_batch_size: 8` instead of 32, `data.prefetch_factor: 8`,
-    `grad_accum_steps: 1` on every head. At 512² a 32-exam batch is ~3 GiB of float32 input. An earlier run with
-    8 exams per batch, 31 workers and prefetch 2 ran out of worker RAM in the cache pass. A later commit
-    (`07e2ea3`) set 8 / 8 / 1 while this file still said 4 / 1 / 4, so 8 / 8 / 1 is unverified on the cluster. The
-    head batch sizes (`batch_size`) are kept for comparability. `extraction_batch_size` caps every encoder call,
+    `grad_accum_steps: 1` on every head but the two re-encoding ones (`4` since 2026-10-23, with their `batch_size`
+    raised to 64). At 512² a 32-exam batch is ~3 GiB of float32 input. An earlier run with 8 exams per batch, 31
+    workers and prefetch 2 ran out of worker RAM in the cache pass. A later commit (`07e2ea3`) set 8 / 8 / 1 while
+    this file still said 4 / 1 / 4, so 8 / 8 / 1 is unverified on the cluster. The other heads' batch sizes
+    (`batch_size`) are kept for comparability. `extraction_batch_size` caps every encoder call,
     in the cache pass and in the re-encoding tasks; `grad_accum_steps` only sets the head's micro-batch
     (`batch_size / grad_accum_steps`). If a re-encoding head runs out of GPU memory, raise its `grad_accum_steps`.
   - `compile_encoder: true` (KneeNo's `torch.compile` of the encoder forward, rounding-only): the encoder took 57
@@ -98,6 +105,6 @@ HF_HUB_OFFLINE=1 .venv/bin/python -m pytest tests -q
   `num_workers=2`, and tests against the real `raidium/curia` (skipped unless it is in the local HF cache).
 - `tests/test_eval_curia_kneeno.py`: the launcher end to end (all tasks, outputs, env var expansion), task selection,
   refusal on existing results, config errors, and the shipped config: it loads, enables every task but
-  `attentive_pool`, and has the patience settings above.
+  `attentive_pool`, and has the patience settings above (`5` on the re-encoding heads).
 - `pytest` puts `eval/` on `sys.path` (`[tool.pytest.ini_options] pythonpath`): it is not a package, and the
   launcher imports `kneeno_adapter` as a sibling module.

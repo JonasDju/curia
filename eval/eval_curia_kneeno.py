@@ -45,8 +45,7 @@ from typing import Any  # noqa: E402
 import torch  # noqa: E402
 import yaml  # noqa: E402
 from kneeno import expand_env_vars  # noqa: E402
-from kneeno.evaluation import ClassificationEvaluator, load_eval_config  # noqa: E402
-from kneeno.evaluation.config import ALL_TASKS  # noqa: E402
+from kneeno.evaluation import ClassificationEvaluator, enabled_tasks, load_eval_config  # noqa: E402
 from transformers import AutoModel  # noqa: E402
 
 from kneeno_adapter import CuriaAdapter  # noqa: E402
@@ -85,20 +84,12 @@ def _find_env_vars(obj: Any) -> list[str]:
     return []
 
 
-def enabled_tasks(freq: dict[str, Any]) -> list[str]:
-    """The tasks whose frequency is set, with ``kneeno.tasks_due``'s semantics: a missing key keeps KneeNo's
-    default (``freq`` is the merged config), null or ``<= 0`` is off. There is only one evaluation, so the value
-    itself does not matter."""
-    tasks = [task for task in ALL_TASKS if freq.get(task) is not None and freq[task] > 0]
-    if not tasks:
-        raise ValueError(f"No task is enabled: every task in eval.freq is null or <= 0 ({freq}).")
-    return tasks
-
-
 def evaluate(config_path: Path) -> dict[str, float]:
     config = load_config(config_path)
     eval_cfg = load_eval_config(config["eval"])
     tasks = enabled_tasks(eval_cfg["freq"])
+    if not tasks:
+        raise ValueError(f"No task is enabled: every task in eval.freq is null or <= 0 ({eval_cfg['freq']}).")
     if eval_cfg.get("encoder", "target") != "target":
         raise ValueError(f"Curia has a single set of weights; eval.encoder must be 'target', got {eval_cfg['encoder']!r}.")
 

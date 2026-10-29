@@ -49,9 +49,11 @@ eval:
     abort_on_io_error: true  # a broken exam is retried (5 s apart) and then raises; never replaced by another exam
     multiprocessing_context: fork  # eval DataLoader worker start method; null -> inherit. Workers must never touch CUDA
     persistent_workers: true  # keep workers alive across head epochs (ignored when num_workers = 0)
+  # One folder per (config variant, level, rep): the submit script exports CONFIG_FILE_NAME (this file's name
+  # without the .yaml), SPLIT_LEVEL and SPLIT_REP.
   logging:
-    tensorboard_dir: /hpcwork/va105917/curia/curia-b/eval/level-${SPLIT_LEVEL}.rep-${SPLIT_REP}/tb
-    per_label_dir: /hpcwork/va105917/curia/curia-b/eval/level-${SPLIT_LEVEL}.rep-${SPLIT_REP}/eval_per_label
+    tensorboard_dir: /hpcwork/va105917/curia/curia-b/eval/type-${CONFIG_FILE_NAME}.level-${SPLIT_LEVEL}.rep-${SPLIT_REP}/tb
+    per_label_dir: /hpcwork/va105917/curia/curia-b/eval/type-${CONFIG_FILE_NAME}.level-${SPLIT_LEVEL}.rep-${SPLIT_REP}/eval_per_label
     tag_prefix: eval
   freq:
     knn: 1
@@ -73,7 +75,7 @@ eval:
     max_epochs: 50
     batch_size: 64  # exams
     grad_accum_steps: 1  # must stay 1 with batchnorm: true
-    lr: [0.0001, 0.0002, 0.0005, 0.001, 0.002, 0.005, 0.01, 0.02]  # swept: the best on val is tested
+    lr: [0.00005, 0.0001, 0.0002, 0.0005, 0.001, 0.002, 0.005, 0.01, 0.02]  # swept: the best on val is tested
     warmup_epochs: 10
     weight_decay: 0.0
   linear_pool:
@@ -82,7 +84,7 @@ eval:
     max_epochs: 50
     batch_size: 64  # exams
     grad_accum_steps: 1  # must stay 1 with batchnorm: true
-    lr: [0.0001, 0.0002, 0.0005, 0.001, 0.002, 0.005, 0.01, 0.02]  # swept: the best on val is tested
+    lr: [0.00005, 0.0001, 0.0002, 0.0005, 0.001, 0.002, 0.005, 0.01, 0.02]  # swept: the best on val is tested
     warmup_epochs: 10
     weight_decay: 0.0
   attentive_pool:
@@ -97,15 +99,15 @@ eval:
     early_stop_patience: 5  # overrides training.early_stop_patience_global (re-encoding head, no feature cache)
     batch_size: 64
     grad_accum_steps: 4  # memory only: the head trains on micro-batches of batch_size / grad_accum_steps = 16 exams
-    lr: 0.0005
+    lr: 0.00025
     warmup_epochs: 3
-    weight_decay: 0.001
+    weight_decay: 0.1
   linear_slice_cls:
     batchnorm: true
     max_epochs: 50
     batch_size: 64
     grad_accum_steps: 1  # must stay 1 with batchnorm: true
-    lr: [0.0001, 0.0002, 0.0005, 0.001, 0.002, 0.005, 0.01, 0.02]  # swept: the best on val is tested
+    lr: [0.00005, 0.0001, 0.0002, 0.0005, 0.001, 0.002, 0.005, 0.01, 0.02]  # swept: the best on val is tested
     warmup_epochs: 10
     weight_decay: 0.0
   attentive_slice_cls:
@@ -119,7 +121,7 @@ eval:
     max_epochs: 50
     batch_size: 64
     grad_accum_steps: 1  # memory only: the head trains on micro-batches of batch_size / grad_accum_steps exams
-    lr: 0.0005
+    lr: 0.00025
     warmup_epochs: 10
     weight_decay: 0.001
   attentive_slice_pool:
@@ -133,6 +135,6 @@ eval:
     early_stop_patience: 5  # overrides training.early_stop_patience_global (re-encoding head, no feature cache)
     batch_size: 64
     grad_accum_steps: 4  # memory only: the head trains on micro-batches of batch_size / grad_accum_steps = 16 exams
-    lr: 0.0005
+    lr: 0.00025
     warmup_epochs: 3
-    weight_decay: 0.001
+    weight_decay: 0.1

@@ -10,11 +10,13 @@ Every task with a non-null ``eval.freq`` runs once and logs its test metrics (he
 are expanded in every string value; an unset one is an error. Next to ``eval.logging.per_label_dir`` the script
 writes the final metrics (``results.json``) and the expanded config (``params.yaml``, once the model, dataset and
 split are loaded, before evaluating); it refuses to start if earlier results exist there. The evaluation runs in a
-single process: KneeNo evaluates on rank 0 only.
+single process: KneeNo evaluates on rank 0 only. If ``CONFIG_FILE_NAME`` is set (the submit script exports it, and
+the shipped config names its output folders with it), it must be the config's file name without the ``.yaml``.
 
 Submit through ``eval/submit_eval_curia_kneeno.sh``; that also prepares the node-local data first. Run by hand:
 
-    .venv/bin/python eval/eval_curia_kneeno.py --config eval/configs/eval-MI-curia-b.yaml
+    CONFIG_FILE_NAME=eval-MI-curia-b SPLIT_LEVEL=1.0 SPLIT_REP=0 TMP=... \
+        .venv/bin/python eval/eval_curia_kneeno.py --config eval/configs/eval-MI-curia-b.yaml
 """
 
 from __future__ import annotations
@@ -54,12 +56,18 @@ from kneeno_adapter import CuriaAdapter  # noqa: E402
 logger = logging.getLogger(__name__)
 
 CONFIG_KEYS = ("model_name", "eval")
+CONFIG_FILE_NAME_VAR = "CONFIG_FILE_NAME"
 # What os.path.expandvars expands when the variable is set, i.e. what is left of an unset one.
 _ENV_VAR_PATTERN = re.compile(r"\$(\{\w+\}|[A-Za-z_]\w*)")
 
 
 def load_config(path: Path) -> dict[str, Any]:
     """The eval config file with env vars expanded, in the file's key order (what ``params.yaml`` records)."""
+    # The submit script exports the config's file name without the .yaml, which names the output folders: it must
+    # name this file.
+    file_name = os.environ.get(CONFIG_FILE_NAME_VAR)
+    if file_name is not None and f"{file_name}.yaml" != Path(path).name:
+        raise ValueError(f"{CONFIG_FILE_NAME_VAR}={file_name!r} does not name the eval config '{path}'.")
     with Path(path).open() as f:
         raw = yaml.safe_load(f) or {}
     if not isinstance(raw, dict) or set(raw) != set(CONFIG_KEYS):

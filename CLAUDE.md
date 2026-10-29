@@ -65,16 +65,27 @@ a test). `pre_processor.py` is a different, unused variant (per-slice z-score, a
   hard-coded) to `$TMP/kneeno_data`, runs the launcher, cleans up. Env vars (pass with `--export=ALL,...`, RWTH's
   sbatch uses `--export=NONE`): `CONFIG` (default `eval/configs/eval-MI-curia-b.yaml`), `REPO_DIR`, `KNEENO_DIR`,
   `SPLIT_LEVEL` / `SPLIT_REP` (default `1.0` / `0`, see below).
+  - **Config variants** (since 2026-10-29): instead of `CONFIG`, `CONFIG_BASE_DIR` (a directory of eval configs) +
+    `CONFIG_FILE_NAME` (a config in it without the `.yaml`, e.g. `query2label`; the script appends it). They must be
+    set together, and not together with `CONFIG` (the script exits otherwise). Relative paths are relative to
+    `REPO_DIR`; every config must be a `.yaml` file. Either way the script exports `CONFIG_FILE_NAME` as the config's
+    file name without the `.yaml`, and the launcher raises unless `${CONFIG_FILE_NAME}.yaml` is its `--config`'s name.
+    The config names its output folders `type-${CONFIG_FILE_NAME}.level-${SPLIT_LEVEL}.rep-${SPLIT_REP}/` (e.g.
+    `type-query2label.level-1.0.rep-0/`), so variants don't collide, and a later script can group `results.json`
+    files by (type, task, level, rep) and pick by val. Running the launcher by hand needs `CONFIG_FILE_NAME` set too.
+  - `tests/test_eval_curia_kneeno.py` runs the submit script itself with `srun` and the venv's python stubbed
+    (`_run_submit_script`) to pin the config resolution and its errors.
   - **Compute nodes are treated as offline:** the job sets `HF_HUB_OFFLINE=1` and checks the config's `model_name` is
     in the HF cache *before* extracting the data. Download once on the login node: `.venv/bin/hf download raidium/curia`.
 - `eval/configs/eval-MI-curia-b.yaml`: the 2D DINOv2 eval config's `eval:` block (same heads, split, seed, data),
   `test_sets: [internal, external]` (`label_meta.external`: `/hpcwork/p0021834/workspace_roman/jonas/metadata/external_labeled.json`),
-  outputs under `/hpcwork/va105917/curia/curia-b/eval/internal/`.
+  outputs under `/hpcwork/va105917/curia/curia-b/eval/type-${CONFIG_FILE_NAME}.level-${SPLIT_LEVEL}.rep-${SPLIT_REP}/`.
   - Train/val (since 2026-10-28): `split.manifest` (KneeNo's split manifest,
     `/hpcwork/p0021834/workspace_roman/jonas/metadata/internal_split_manifest.json`), `level: ${SPLIT_LEVEL}`,
     `rep: ${SPLIT_REP}` (since 2026-10-29), which the submit script exports (default `1.0` / `0`): one job per
     (level, rep) to report, `sbatch --export=ALL,SPLIT_LEVEL=0.05,SPLIT_REP=3 ...`. The output folders end in
-    `level-${SPLIT_LEVEL}.rep-${SPLIT_REP}/`, so the runs don't collide (the launcher refuses existing results).
+    `level-${SPLIT_LEVEL}.rep-${SPLIT_REP}/` (after the `type-` prefix above), so the runs don't collide (the
+    launcher refuses existing results).
     Running the launcher without the submit script needs both set (an unset env var is an error). `split.val_fraction` and `data.subset` are gone (they raise). The tests write a
     manifest for the fakes with `kneeno.evaluation.splits.write_manifest_for`.
   - `attentive_pool` is off (`freq: null`): it is the weaker variant of `attentive_slice_pool` (same tokens, without

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -135,6 +137,19 @@ def test_load_config__unset_env_var(tmp_path: Path, config: dict[str, Any], monk
     assert not _out_dir(tmp_path).exists()
 
 
+def test_load_config__config_file_name(
+    tmp_path: Path, config: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # CONFIG_FILE_NAME names the output folders, so it must name the config that runs.
+    path = _write(tmp_path, config)
+    monkeypatch.setenv("CONFIG_FILE_NAME", path.stem)
+    eval_curia_kneeno.load_config(path)
+    for wrong in ("query2label", path.name):  # another config, or the name with the .yaml
+        monkeypatch.setenv("CONFIG_FILE_NAME", wrong)
+        with pytest.raises(ValueError, match="does not name the eval config"):
+            eval_curia_kneeno.load_config(path)
+
+
 @pytest.mark.parametrize(
     "change",
     [
@@ -183,6 +198,7 @@ def test_shipped_config() -> None:
         mp.setenv("TMP", "/tmp/job")
         mp.setenv("SPLIT_LEVEL", "0.05")  # set by the submit script (default 1.0 / 0)
         mp.setenv("SPLIT_REP", "3")
+        mp.setenv("CONFIG_FILE_NAME", path.stem)
         config = eval_curia_kneeno.load_config(path)
     assert config["model_name"] == "raidium/curia"
     assert config["eval"]["data"]["data_root"] == {
@@ -196,8 +212,8 @@ def test_shipped_config() -> None:
         "level": "0.05",  # a string until KneeNo's load_eval_config parses it
         "rep": "3",
     }
-    for key in ("tensorboard_dir", "per_label_dir"):  # every (level, rep) has its own output folder
-        assert "/level-0.05.rep-3/" in config["eval"]["logging"][key]
+    for key in ("tensorboard_dir", "per_label_dir"):  # every (config, level, rep) has its own output folder
+        assert "/type-eval-MI-curia-b.level-0.05.rep-3/" in config["eval"]["logging"][key]
     eval_cfg = load_eval_config(config["eval"])
     assert (eval_cfg["split"]["level"], eval_cfg["split"]["rep"]) == (0.05, 3)
     assert eval_curia_kneeno.enabled_tasks(eval_cfg["freq"]) == [task for task in ALL_TASKS if task != "attentive_pool"]
@@ -213,3 +229,89 @@ def test_submit_script__split_defaults() -> None:
     script = (Path(__file__).resolve().parents[1] / "eval" / "submit_eval_curia_kneeno.sh").read_text()
     assert 'export SPLIT_LEVEL="${SPLIT_LEVEL:-1.0}"' in script
     assert 'export SPLIT_REP="${SPLIT_REP:-0}"' in script
+
+
+def _run_submit_script(tmp_path: Path, env: dict[str, str]) -> tuple[subprocess.CompletedProcess[str], list[str]]:
+    """Runs the submit script with srun and the venv's python stubbed; returns the launcher calls it made."""
+    repo = Path(__file__).resolve().parents[1]
+    calls = tmp_path / "calls.txt"
+    bin_dir, venv_bin, kneeno = tmp_path / "bin", tmp_path / "repo" / ".venv" / "bin", tmp_path / "KneeNo" / "data"
+    for directory in (bin_dir, venv_bin, kneeno):
+        directory.mkdir(parents=True)
+    (kneeno / "prepare_data.py").touch()
+    (bin_dir / "srun").write_text('#!/bin/bash\nexec "$@"\n')
+    # The HF cache check reads its script from stdin; every other call is recorded with the env var it sees.
+    (venv_bin / "python").write_text(
+        '#!/bin/bash\n[[ "$1" == - ]] && { cat > /dev/null; exit 0; }\n'
+        f'echo "$* CONFIG_FILE_NAME=$CONFIG_FILE_NAME" >> {calls}\n'
+    )
+    for script in (bin_dir / "srun", venv_bin / "python"):
+        script.chmod(0o755)
+    configs = tmp_path / "repo" / "eval" / "configs"
+    configs.mkdir(parents=True)
+    for name in ("eval-MI-curia-b.yaml", "query2label.yaml", "query2label.yml"):
+        (configs / name).touch()
+    run_env = {
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "REPO_DIR": str(tmp_path / "repo"),
+        "KNEENO_DIR": str(tmp_path / "KneeNo"),
+        "TMP": str(tmp_path / "scratch"),
+        **env,
+    }
+    result = subprocess.run(
+        ["bash", str(repo / "eval" / "submit_eval_curia_kneeno.sh")], env=run_env, capture_output=True, text=True
+    )
+    lines = calls.read_text().splitlines() if calls.exists() else []
+    return result, [line for line in lines if "eval_curia_kneeno.py" in line]
+
+
+@pytest.mark.parametrize(
+    "env, config",
+    [
+        ({}, "eval/configs/eval-MI-curia-b.yaml"),
+        ({"CONFIG": "eval/configs/query2label.yaml"}, "eval/configs/query2label.yaml"),
+        ({"CONFIG_BASE_DIR": "eval/configs", "CONFIG_FILE_NAME": "query2label"}, "eval/configs/query2label.yaml"),
+        (
+            {"CONFIG_BASE_DIR": "{repo}/eval/configs", "CONFIG_FILE_NAME": "query2label"},
+            "eval/configs/query2label.yaml",
+        ),
+    ],
+    ids=["default", "config", "base_dir_relative", "base_dir_absolute"],
+)
+def test_submit_script__config(tmp_path: Path, env: dict[str, str], config: str) -> None:
+    env = {key: value.format(repo=tmp_path / "repo") for key, value in env.items()}
+    result, launches = _run_submit_script(tmp_path, env)
+    assert result.returncode == 0, result.stderr
+    # The launcher gets the config's path and, either way, its file name without the .yaml for the output folders.
+    path = tmp_path / "repo" / config
+    assert launches == [f"eval/eval_curia_kneeno.py --config {path} CONFIG_FILE_NAME={path.stem}"]
+
+
+@pytest.mark.parametrize(
+    "env, match",
+    [
+        ({"CONFIG": "eval/configs/query2label.yaml", "CONFIG_FILE_NAME": "query2label"}, "not both"),
+        ({"CONFIG": "eval/configs/query2label.yaml", "CONFIG_BASE_DIR": "eval/configs"}, "not both"),
+        ({"CONFIG_BASE_DIR": "eval/configs"}, "must be set together"),
+        ({"CONFIG_FILE_NAME": "query2label"}, "must be set together"),
+        ({"CONFIG_BASE_DIR": "eval", "CONFIG_FILE_NAME": "configs/query2label"}, "without the .yaml"),
+        ({"CONFIG_BASE_DIR": "eval/configs", "CONFIG_FILE_NAME": "query2label.yaml"}, "without the .yaml"),
+        ({"CONFIG_BASE_DIR": "eval/configs", "CONFIG_FILE_NAME": "missing"}, "Eval config not found"),
+        ({"CONFIG": "eval/configs/query2label.yml"}, "must be a .yaml file"),
+    ],
+    ids=[
+        "config_and_file_name",
+        "config_and_base_dir",
+        "base_dir_only",
+        "file_name_only",
+        "file_name_path",
+        "file_name_with_yaml",
+        "missing",
+        "config_not_yaml",
+    ],
+)
+def test_submit_script__config_errors(tmp_path: Path, env: dict[str, str], match: str) -> None:
+    result, launches = _run_submit_script(tmp_path, env)
+    assert result.returncode != 0
+    assert match in result.stderr
+    assert launches == []

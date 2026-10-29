@@ -8,8 +8,9 @@ eval config (``--config``) is a YAML with exactly
 
 Every task with a non-null ``eval.freq`` runs once and logs its test metrics (heads early-stopped on val). Environment variables
 are expanded in every string value; an unset one is an error. Next to ``eval.logging.per_label_dir`` the script
-writes the final metrics (``results.json``) and the expanded config (``params.yaml``, before evaluating); it refuses
-to start if earlier results exist there. The evaluation runs in a single process: KneeNo evaluates on rank 0 only.
+writes the final metrics (``results.json``) and the expanded config (``params.yaml``, once the model, dataset and
+split are loaded, before evaluating); it refuses to start if earlier results exist there. The evaluation runs in a
+single process: KneeNo evaluates on rank 0 only.
 
 Submit through ``eval/submit_eval_curia_kneeno.sh``; that also prepares the node-local data first. Run by hand:
 
@@ -106,10 +107,6 @@ def evaluate(config_path: Path) -> dict[str, float]:
     ]
     if existing:
         raise ValueError(f"Results of an earlier evaluation exist: {existing}. Delete them or point eval.logging elsewhere.")
-    # Written before evaluating, so a run that crashes still records its settings.
-    out_dir.mkdir(parents=True, exist_ok=True)
-    params_path.write_text(yaml.safe_dump(config, sort_keys=False))
-    logger.info(f"Wrote the evaluation config to '{params_path}'")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Loading '{config['model_name']}', evaluating on {device} on tasks {tasks}.")
@@ -120,6 +117,12 @@ def evaluate(config_path: Path) -> dict[str, float]:
     adapter = CuriaAdapter(model_name=config["model_name"], embed_dim=model.config.hidden_size)
 
     evaluator = ClassificationEvaluator(config=eval_cfg, adapter=adapter, device=device)
+    # Written after everything that fails fast (the config, the model, and the dataset and split the evaluator builds):
+    # a config they reject must not leave a params.yaml that makes the corrected rerun refuse. But before evaluating,
+    # so a run that crashes still records its settings.
+    out_dir.mkdir(parents=True, exist_ok=True)
+    params_path.write_text(yaml.safe_dump(config, sort_keys=False))
+    logger.info(f"Wrote the evaluation config to '{params_path}'")
     try:
         metrics = evaluator.evaluate(model, tasks=tasks, epoch=0)
     finally:

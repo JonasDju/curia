@@ -50,9 +50,10 @@ a test). `pre_processor.py` is a different, unused variant (per-slice z-score, a
   - Config: exactly `model_name` (Hub id or local dir) and `eval`; env vars expanded, **an unset one is an error**.
   - Tasks: those with a non-null `> 0` `eval.freq` on the merged config (a missing key keeps KneeNo's default).
     `eval.encoder` must be `target` (KneeNo's default): Curia has one set of weights.
-  - Outputs in the parent of `eval.logging.per_label_dir` (required): `params.yaml` (expanded config, written before
-    the model is loaded) and `results.json`. Refuses if either, `per_label_dir` or `tensorboard_dir` exists; there is
-    no overwrite flag.
+  - Outputs in the parent of `eval.logging.per_label_dir` (required): `params.yaml` (expanded config, written once
+    the model is loaded and the evaluator has built the dataset and split, before evaluating; since 2026-10-29, before
+    that a bad model name or split left one behind that blocked the rerun) and `results.json`. Refuses if either,
+    `per_label_dir` or `tensorboard_dir` exists; there is no overwrite flag.
   - One `evaluate(..., epoch=0)` call: each task logs its metrics once per test set (KneeNo's global-split protocol:
     heads train on the internal `train` split, early-stopped on val; `eval.verbose` logs the val metrics per head
     epoch, then the best head is scored on each test set), keys `{test_set}/{task}/{metric}`, plus each trained

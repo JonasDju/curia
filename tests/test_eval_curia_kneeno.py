@@ -167,6 +167,14 @@ def test_evaluate__invalid_eval_block(tmp_path: Path, config: dict[str, Any], ch
     assert not (_out_dir(tmp_path) / "params.yaml").exists()
 
 
+def test_evaluate__split_error_leaves_no_params(tmp_path: Path, config: dict[str, Any]) -> None:
+    # The evaluator builds the dataset and the split; a config they reject leaves nothing that blocks the rerun.
+    config["eval"]["split"]["rep"] = 99
+    with pytest.raises(ValueError, match="no split with level"):
+        eval_curia_kneeno.evaluate(_write(tmp_path, config))
+    assert not _out_dir(tmp_path).exists()
+
+
 def test_shipped_config() -> None:
     # The shipped config loads (with $TMP set, as in the job) and enables every task but attentive_pool, which is
     # deliberately off (attentive_slice_pool sees the same tokens and knows their slice).

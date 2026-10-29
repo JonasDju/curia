@@ -15,6 +15,9 @@
 # Compute nodes are treated as offline, so the job runs with HF_HUB_OFFLINE=1. Download the model once on the
 # login node first (after `.venv/bin/hf auth login` if the repo is gated):
 #     .venv/bin/hf download raidium/curia
+# The job logs to slurm_logs/type-<CONFIG_FILE_NAME>.level-<SPLIT_LEVEL>.rep-<SPLIT_REP>.<job id>.log in the submit
+# directory (slurm_logs/ is in the repo: SLURM does not create it). Until the script has resolved the config and the
+# split it is slurm_logs/<job id>.log, where an early error (e.g. CONFIG and CONFIG_FILE_NAME both set) stays.
 # The evaluation runs in a single process on one GPU (KneeNo evaluates on rank 0 only, more GPUs would not help).
 # --cpus-per-task feeds the eval loader's eval.data.num_workers (31) workers. Curia encodes 512² slices (1,024
 # patches each, 4x DINOv2 at 224²) and the attentive tasks re-encode every head epoch, hence the long time limit.
@@ -26,7 +29,7 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --time=24:00:00
 #SBATCH --job-name=curia-b-eval
-#SBATCH --output=slurm-%j-curia_kneeno_eval.out
+#SBATCH --output=slurm_logs/%j.log
 
 set -euo pipefail
 
@@ -66,6 +69,14 @@ export CONFIG_FILE_NAME="$(basename "$CONFIG" .yaml)"
 # Defaults: the whole internal "train" split, rep 0. Each (level, rep) writes to its own output folder.
 export SPLIT_LEVEL="${SPLIT_LEVEL:-1.0}"
 export SPLIT_REP="${SPLIT_REP:-0}"
+# SLURM opens the log before the script runs, so --output cannot name it after the config and split: rename it now.
+# SLURM keeps writing to the renamed file. Left alone if the log is elsewhere (sbatch --output=...), and never moved
+# over an earlier log (a requeued job keeps its id).
+LOG_DIR="${SLURM_SUBMIT_DIR:-}/slurm_logs"
+if [[ -n "${SLURM_JOB_ID:-}" && -f "$LOG_DIR/$SLURM_JOB_ID.log" ]]; then
+    mv -n "$LOG_DIR/$SLURM_JOB_ID.log" \
+        "$LOG_DIR/type-$CONFIG_FILE_NAME.level-$SPLIT_LEVEL.rep-$SPLIT_REP.$SLURM_JOB_ID.log"
+fi
 # The job's node-local scratch: the data is extracted there and the eval config's data_root points there.
 : "${TMP:?TMP (the node-local scratch directory of the job) is not set}"
 export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"

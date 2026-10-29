@@ -65,6 +65,13 @@ a test). `pre_processor.py` is a different, unused variant (per-slice z-score, a
   hard-coded) to `$TMP/kneeno_data`, runs the launcher, cleans up. Env vars (pass with `--export=ALL,...`, RWTH's
   sbatch uses `--export=NONE`): `CONFIG` (default `eval/configs/eval-MI-curia-b.yaml`), `REPO_DIR`, `KNEENO_DIR`,
   `SPLIT_LEVEL` / `SPLIT_REP` (default `1.0` / `0`, see below).
+  - **Job logs** (since 2026-10-29): `slurm_logs/type-<CONFIG_FILE_NAME>.level-<SPLIT_LEVEL>.rep-<SPLIT_REP>.<job id>.log`
+    in the submit directory. `#SBATCH` directives can't use env vars, so `--output` is `slurm_logs/%j.log`, and the
+    script renames it (`mv -n`) once the config and split are resolved; SLURM keeps writing to the open file
+    (verified on the cluster). An invalid combination of `CONFIG*` vars exits before that, so its error stays in
+    `slurm_logs/<job id>.log`; a config file that doesn't exist fails after the rename. A log elsewhere
+    (`sbatch --output=...`) is left alone. `slurm_logs/` is tracked (its own `.gitignore`, `*` + `!.gitignore`)
+    because SLURM doesn't create the `--output` directory. The tests pin the rename.
   - **Config variants** (since 2026-10-29): instead of `CONFIG`, `CONFIG_BASE_DIR` (a directory of eval configs) +
     `CONFIG_FILE_NAME` (a config in it without the `.yaml`, e.g. `query2label`; the script appends it). They must be
     set together, and not together with `CONFIG` (the script exits otherwise). Relative paths are relative to

@@ -249,11 +249,15 @@ def _run_submit_script(tmp_path: Path, env: dict[str, str]) -> tuple[subprocess.
         script.chmod(0o755)
     configs = tmp_path / "repo" / "eval" / "configs"
     configs.mkdir(parents=True)
+    # The log SLURM opened before the script ran (#SBATCH --output, relative to the submit directory).
+    (tmp_path / "repo" / "slurm_logs").mkdir()
+    (tmp_path / "repo" / "slurm_logs" / "123.log").touch()
     for name in ("eval-MI-curia-b.yaml", "query2label.yaml", "query2label.yml"):
         (configs / name).touch()
     run_env = {
         "PATH": f"{bin_dir}:{os.environ['PATH']}",
-        "REPO_DIR": str(tmp_path / "repo"),
+        "SLURM_SUBMIT_DIR": str(tmp_path / "repo"),
+        "SLURM_JOB_ID": "123",
         "KNEENO_DIR": str(tmp_path / "KneeNo"),
         "TMP": str(tmp_path / "scratch"),
         **env,
@@ -285,6 +289,18 @@ def test_submit_script__config(tmp_path: Path, env: dict[str, str], config: str)
     # The launcher gets the config's path and, either way, its file name without the .yaml for the output folders.
     path = tmp_path / "repo" / config
     assert launches == [f"eval/eval_curia_kneeno.py --config {path} CONFIG_FILE_NAME={path.stem}"]
+    # The job's log is renamed after the config and the split.
+    assert sorted(p.name for p in (tmp_path / "repo" / "slurm_logs").iterdir()) == [
+        f"type-{path.stem}.level-1.0.rep-0.123.log"
+    ]
+
+
+def test_submit_script__log_name(tmp_path: Path) -> None:
+    env = {"CONFIG_BASE_DIR": "eval/configs", "CONFIG_FILE_NAME": "query2label", "SPLIT_LEVEL": "0.05"}
+    result, _ = _run_submit_script(tmp_path, {**env, "SPLIT_REP": "3"})
+    assert result.returncode == 0, result.stderr
+    logs = [p.name for p in (tmp_path / "repo" / "slurm_logs").iterdir()]
+    assert logs == ["type-query2label.level-0.05.rep-3.123.log"]
 
 
 @pytest.mark.parametrize(
@@ -315,3 +331,5 @@ def test_submit_script__config_errors(tmp_path: Path, env: dict[str, str], match
     assert result.returncode != 0
     assert match in result.stderr
     assert launches == []
+    if match != "Eval config not found":  # invalid CONFIG* vars stop the script before the log is renamed
+        assert [p.name for p in (tmp_path / "repo" / "slurm_logs").iterdir()] == ["123.log"]

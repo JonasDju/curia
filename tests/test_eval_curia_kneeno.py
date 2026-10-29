@@ -10,6 +10,7 @@ import yaml
 from conftest import DEPTH, fake_eval_dataset
 from kneeno.evaluation import ClassificationEvaluator, classification, load_eval_config
 from kneeno.evaluation.config import ALL_TASKS, TRAINED_TASKS
+from kneeno.evaluation.splits import write_manifest_for
 
 import eval_curia_kneeno
 
@@ -20,7 +21,7 @@ def fake_dataset(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         classification.KneeNoEvalDataset,
         "from_config",
-        staticmethod(lambda data_cfg, seed: fake_eval_dataset(tuple(data_cfg["test_sets"]))),
+        staticmethod(lambda data_cfg: fake_eval_dataset(tuple(data_cfg["test_sets"]))),
     )
 
 
@@ -32,9 +33,12 @@ def _out_dir(tmp_path: Path) -> Path:
 def config(tmp_path: Path, tiny_curia_dir: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     attentive = {"max_epochs": 1, "batch_size": 4, "num_heads": 2}
     monkeypatch.setenv("CURIA_TEST_OUT", str(_out_dir(tmp_path)))
+    # Every test set builds the same fake train part, so one manifest serves them all.
+    manifest = write_manifest_for(fake_eval_dataset(), tmp_path / "split_manifest.json")
     return {
         "model_name": str(tiny_curia_dir),
         "eval": {
+            "split": {"manifest": str(manifest), "level": 1.0, "rep": 0},
             "data": {"test_sets": ["internal", "external"], "num_workers": 0, "series_depth": DEPTH},
             "logging": {
                 "tensorboard_dir": "${CURIA_TEST_OUT}/tb",
@@ -169,6 +173,8 @@ def test_shipped_config() -> None:
     path = Path(__file__).resolve().parents[1] / "eval" / "configs" / "eval-MI-curia-b.yaml"
     with pytest.MonkeyPatch.context() as mp:
         mp.setenv("TMP", "/tmp/job")
+        mp.setenv("SPLIT_LEVEL", "0.05")  # set by the submit script (default 1.0 / 0)
+        mp.setenv("SPLIT_REP", "3")
         config = eval_curia_kneeno.load_config(path)
     assert config["model_name"] == "raidium/curia"
     assert config["eval"]["data"]["data_root"] == {
@@ -177,10 +183,25 @@ def test_shipped_config() -> None:
     }
     assert config["eval"]["data"]["test_sets"] == ["internal", "external"]
     assert config["eval"]["data"]["series_depth"] > 0  # the slice-wise adapter keeps the depth
+    assert config["eval"]["split"] == {
+        "manifest": "/hpcwork/p0021834/workspace_roman/jonas/metadata/internal_split_manifest.json",
+        "level": "0.05",  # a string until KneeNo's load_eval_config parses it
+        "rep": "3",
+    }
+    for key in ("tensorboard_dir", "per_label_dir"):  # every (level, rep) has its own output folder
+        assert "/level-0.05.rep-3/" in config["eval"]["logging"][key]
     eval_cfg = load_eval_config(config["eval"])
+    assert (eval_cfg["split"]["level"], eval_cfg["split"]["rep"]) == (0.05, 3)
     assert eval_curia_kneeno.enabled_tasks(eval_cfg["freq"]) == [task for task in ALL_TASKS if task != "attentive_pool"]
     # No early stopping, except for the two heads that re-encode every head epoch (no feature cache).
     assert eval_cfg["training"]["early_stop_patience_global"] == 0
     assert {task: eval_cfg[task]["early_stop_patience"] for task in TRAINED_TASKS} == {
         task: 5 if task in ("attentive_pool", "attentive_slice_pool") else None for task in TRAINED_TASKS
     }
+
+
+def test_submit_script__split_defaults() -> None:
+    # SPLIT_LEVEL / SPLIT_REP select the eval config's split; unset, the whole train split's rep 0.
+    script = (Path(__file__).resolve().parents[1] / "eval" / "submit_eval_curia_kneeno.sh").read_text()
+    assert 'export SPLIT_LEVEL="${SPLIT_LEVEL:-1.0}"' in script
+    assert 'export SPLIT_REP="${SPLIT_REP:-0}"' in script

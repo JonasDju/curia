@@ -62,12 +62,20 @@ a test). `pre_processor.py` is a different, unused variant (per-slice z-score, a
 - `eval/submit_eval_curia_kneeno.sh`: the 2D lightly-train eval sbatch without `PRETRAIN_JOB_ID`. 1 GPU, 1 task,
   32 CPUs, 24 h. Extracts the internal and the external data (`--external-tar /hpcwork/p0021834/workspace_roman/jonas/uka_gold_nifti.tar`,
   hard-coded) to `$TMP/kneeno_data`, runs the launcher, cleans up. Env vars (pass with `--export=ALL,...`, RWTH's
-  sbatch uses `--export=NONE`): `CONFIG` (default `eval/configs/eval-MI-curia-b.yaml`), `REPO_DIR`, `KNEENO_DIR`.
+  sbatch uses `--export=NONE`): `CONFIG` (default `eval/configs/eval-MI-curia-b.yaml`), `REPO_DIR`, `KNEENO_DIR`,
+  `SPLIT_LEVEL` / `SPLIT_REP` (default `1.0` / `0`, see below).
   - **Compute nodes are treated as offline:** the job sets `HF_HUB_OFFLINE=1` and checks the config's `model_name` is
     in the HF cache *before* extracting the data. Download once on the login node: `.venv/bin/hf download raidium/curia`.
 - `eval/configs/eval-MI-curia-b.yaml`: the 2D DINOv2 eval config's `eval:` block (same heads, split, seed, data),
   `test_sets: [internal, external]` (`label_meta.external`: `/hpcwork/p0021834/workspace_roman/jonas/metadata/external_labeled.json`),
   outputs under `/hpcwork/va105917/curia/curia-b/eval/internal/`.
+  - Train/val (since 2026-10-28): `split.manifest` (KneeNo's split manifest,
+    `/hpcwork/p0021834/workspace_roman/jonas/metadata/internal_split_manifest.json`), `level: ${SPLIT_LEVEL}`,
+    `rep: ${SPLIT_REP}` (since 2026-10-29), which the submit script exports (default `1.0` / `0`): one job per
+    (level, rep) to report, `sbatch --export=ALL,SPLIT_LEVEL=0.05,SPLIT_REP=3 ...`. The output folders end in
+    `level-${SPLIT_LEVEL}.rep-${SPLIT_REP}/`, so the runs don't collide (the launcher refuses existing results).
+    Running the launcher without the submit script needs both set (an unset env var is an error). `split.val_fraction` and `data.subset` are gone (they raise). The tests write a
+    manifest for the fakes with `kneeno.evaluation.splits.write_manifest_for`.
   - `attentive_pool` is off (`freq: null`): it is the weaker variant of `attentive_slice_pool` (same tokens, without
     knowing their slice) and takes hours.
   - Early stopping: `training.early_stop_patience_global: 0` (none) except `early_stop_patience: 5` on the two

@@ -12,6 +12,7 @@ from kneeno.evaluation.dataset import LabeledExternalKneeMRIDataset, LabeledInte
 from kneeno.evaluation import ClassificationEvaluator
 from kneeno.evaluation.adapter import EncoderAdapter
 from kneeno.evaluation.config import ALL_TASKS
+from kneeno.evaluation.splits import write_manifest_for
 
 from kneeno_adapter import CuriaAdapter
 
@@ -168,11 +169,16 @@ def test_prepare_input__collate__forward_features(adapter: CuriaAdapter, tiny_mo
     assert torch.isfinite(out["slice_patches"]).all()
 
 
-def test_evaluator__all_tasks_with_workers(adapter: CuriaAdapter, tiny_model: torch.nn.Module) -> None:
+def test_evaluator__all_tasks_with_workers(
+    adapter: CuriaAdapter, tiny_model: torch.nn.Module, tmp_path: Path
+) -> None:
     # Every task (the slice tasks included) through KneeNo's evaluator, with real DataLoader workers: the adapter
     # runs in forked workers there, which num_workers=0 would never exercise.
     attentive = {"max_epochs": 1, "batch_size": 4, "num_heads": 2}
+    dataset = fake_eval_dataset(("internal", "external"))  # uint8 and raw volumes in one evaluation
+    manifest = write_manifest_for(dataset, tmp_path / "split_manifest.json")
     config = {
+        "split": {"manifest": str(manifest), "level": 1.0, "rep": 0},
         "data": {"num_workers": 2, "series_depth": DEPTH},
         "freq": {task: 1 for task in ALL_TASKS},
         "knn": {"k": [3]},
@@ -184,7 +190,6 @@ def test_evaluator__all_tasks_with_workers(adapter: CuriaAdapter, tiny_model: to
         "attentive_slice_cls": attentive,
         "attentive_slice_pool": attentive,
     }
-    dataset = fake_eval_dataset(("internal", "external"))  # uint8 and raw volumes in one evaluation
     evaluator = ClassificationEvaluator(config=config, adapter=adapter, dataset=dataset)
     try:
         metrics = evaluator.evaluate(tiny_model, tasks=list(ALL_TASKS))

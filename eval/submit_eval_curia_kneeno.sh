@@ -1,8 +1,12 @@
 #!/bin/bash
 # Standalone KneeNo classification evaluation of an official Curia checkpoint. Submit from the repo root:
 #     sbatch eval/submit_eval_curia_kneeno.sh
-# Pass env vars (CONFIG, REPO_DIR, KNEENO_DIR) with --export: RWTH's sbatch submits with --export=NONE, so a
-# `VAR=... sbatch ...` prefix never reaches the job, e.g. `sbatch --export=ALL,CONFIG=... eval/submit_eval_curia_kneeno.sh`.
+# Pass env vars (CONFIG, REPO_DIR, KNEENO_DIR, SPLIT_LEVEL, SPLIT_REP) with --export: RWTH's sbatch submits with
+# --export=NONE, so a `VAR=... sbatch ...` prefix never reaches the job, e.g. `sbatch --export=ALL,CONFIG=... eval/submit_eval_curia_kneeno.sh`.
+# SPLIT_LEVEL / SPLIT_REP (default 1.0 / 0) pick the split manifest's train/val split, one job per (level, rep):
+#     for level in 1.0 0.1 0.01; do for rep in 0 1 2; do
+#         sbatch --export=ALL,SPLIT_LEVEL=$level,SPLIT_REP=$rep eval/submit_eval_curia_kneeno.sh
+#     done; done
 #
 # Compute nodes are treated as offline, so the job runs with HF_HUB_OFFLINE=1. Download the model once on the
 # login node first (after `.venv/bin/hf auth login` if the repo is gated):
@@ -28,6 +32,10 @@ set -euo pipefail
 REPO_DIR="${REPO_DIR:-$SLURM_SUBMIT_DIR}"
 KNEENO_DIR="${KNEENO_DIR:-$REPO_DIR/../KneeNo}"
 CONFIG="${CONFIG:-eval/configs/eval-MI-curia-b.yaml}"  # relative to REPO_DIR
+# The split of KneeNo's split manifest the heads train and validate on (the eval config's eval.split.level / rep).
+# Defaults: the whole internal "train" split, rep 0. Each (level, rep) writes to its own output folder.
+export SPLIT_LEVEL="${SPLIT_LEVEL:-1.0}"
+export SPLIT_REP="${SPLIT_REP:-0}"
 # The job's node-local scratch: the data is extracted there and the eval config's data_root points there.
 : "${TMP:?TMP (the node-local scratch directory of the job) is not set}"
 export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
